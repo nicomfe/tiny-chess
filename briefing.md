@@ -64,7 +64,8 @@ A small website where a creator configures a challenge (5 or 10 minutes, who pla
   - **Play link (share):** `/game/{matchId}` — opponent and spectators; no creator secret.
   - **Creator link:** `/game/{matchId}?token=…` — maps always to creator role; token stored hashed server-side.
 - **Joiner binding:** First visitor to the play link without a valid creator token claims joiner; store **`joiner_token_hash`** and set an **httpOnly cookie** with the raw joiner token. Revisits with that cookie remain joiner. No joiner recovery if the cookie is lost (user becomes spectator only). Second joiner attempt does not replace the joiner.
-- **Role resolution:** API uses creator token query param when present; else joiner cookie; else spectator (or joiner-claim flow on first eligible visit).
+- **Role resolution:** creator token query param when present; else joiner cookie; else spectator.
+- **Where the seat is claimed:** **opening the play page** claims the joiner seat; the state endpoint only ever *reads* a role. Revised during ticket 02: a claiming state endpoint makes reading public state destructive, so any poll or probe that reached it without a creator token could seat itself — including the creator's own waiting-page poll. Tying the claim to the page keeps one well-defined entry point.
 
 ### Game lifecycle and state machine
 
@@ -115,7 +116,7 @@ finished    → terminal (result recorded; read-only replay)
 ### API surface (conceptual)
 
 - Create match (time, creator plays white or not) → returns match id, creator URL, play URL.
-- Get/join state for match id ( establishes joiner on first eligible visit ).
+- Get state for match id (read-only; the play page, not this endpoint, establishes the joiner).
 - Poll state (with cursor/version).
 - Submit move (UCI).
 - Resign, offer draw, accept/decline draw.

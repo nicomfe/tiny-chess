@@ -9,12 +9,14 @@ final class Request
     /**
      * @param array<string, string> $query
      * @param array<string, mixed>  $body
+     * @param array<string, string> $cookies
      */
     public function __construct(
         public readonly string $method,
         public readonly string $path,
         public readonly array $query,
         public readonly array $body,
+        public readonly array $cookies,
         public readonly string $scheme,
         public readonly string $host,
     ) {
@@ -30,6 +32,7 @@ final class Request
             path: '/' . trim($path, '/'),
             query: self::stringMap($_GET),
             body: self::readBody(),
+            cookies: self::stringMap($_COOKIE),
             scheme: self::detectScheme(),
             host: (string) ($_SERVER['HTTP_HOST'] ?? 'localhost'),
         );
@@ -38,6 +41,13 @@ final class Request
     public function queryParam(string $name): ?string
     {
         $value = $this->query[$name] ?? '';
+
+        return $value === '' ? null : $value;
+    }
+
+    public function cookie(string $name): ?string
+    {
+        $value = $this->cookies[$name] ?? '';
 
         return $value === '' ? null : $value;
     }
@@ -69,6 +79,11 @@ final class Request
     public function baseUrl(): string
     {
         return $this->scheme . '://' . $this->host;
+    }
+
+    public function isSecure(): bool
+    {
+        return $this->scheme === 'https';
     }
 
     /** @return array<string, mixed> */

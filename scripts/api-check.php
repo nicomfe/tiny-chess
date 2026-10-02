@@ -32,7 +32,7 @@ function check(string $description, bool $passed, string $detail = ''): void
  * @param array<string, mixed>|null $formBody
  * @return array{status: int, headers: array<int, string>, body: string, json: array<string, mixed>|null}
  */
-function request(string $method, string $url, ?array $jsonBody = null, ?array $formBody = null): array
+function request(string $method, string $url, ?array $jsonBody = null, ?array $formBody = null, ?string $cookie = null): array
 {
     $headers = ['Accept: application/json'];
     $options = [
@@ -41,6 +41,10 @@ function request(string $method, string $url, ?array $jsonBody = null, ?array $f
         'follow_location' => 0,
         'timeout' => 10,
     ];
+
+    if ($cookie !== null) {
+        $headers[] = 'Cookie: ' . $cookie;
+    }
 
     if ($jsonBody !== null) {
         $headers[] = 'Content-Type: application/json';
@@ -84,6 +88,84 @@ function header_value(array $headers, string $name): ?string
     return null;
 }
 
+/**
+ * The whole `Set-Cookie` line for the first cookie whose name starts with the
+ * given prefix, so checks can assert on attributes as well as the value.
+ *
+ * @param array<int, string> $headers
+ */
+function set_cookie_header(array $headers, string $namePrefix): ?string
+{
+    foreach ($headers as $header) {
+        if (stripos($header, 'Set-Cookie:') === 0
+            && str_starts_with(ltrim(substr($header, strlen('Set-Cookie:'))), $namePrefix)) {
+            return trim(substr($header, strlen('Set-Cookie:')));
+        }
+    }
+
+    return null;
+}
+
+/** The `name=value` pair of a `Set-Cookie` line, ready to send back as a `Cookie` header. */
+function cookie_pair(?string $setCookie): ?string
+{
+    if ($setCookie === null) {
+        return null;
+    }
+
+    return trim(explode(';', $setCookie, 2)[0]);
+}
+
+/** The raw creator token out of a creator URL. */
+function creator_token_from(string $creatorUrl): string
+{
+    $query = (string) parse_url($creatorUrl, PHP_URL_QUERY);
+
+    return urldecode(substr($query, strlen('token=')));
+}
+
+/**
+ * The game page renders its role and status as data attributes, so checks can
+ * assert on the page without depending on the wording shown to players.
+ */
+function page_attribute(string $body, string $attribute): ?string
+{
+    preg_match('/data-' . preg_quote($attribute, '/') . '="([^"]*)"/', $body, $found);
+
+    return $found[1] ?? null;
+}
+
+/**
+ * Public state for a match, as whoever the given credentials make the caller.
+ *
+ * @return array{status: int, headers: array<int, string>, body: string, json: array<string, mixed>|null}
+ */
+function match_state(string $baseUrl, string $matchId, ?string $joinerCookie = null, string $creatorToken = ''): array
+{
+    $url = $baseUrl . '/api/matches/' . $matchId
+        . ($creatorToken === '' ? '' : '?token=' . urlencode($creatorToken));
+
+    return request('GET', $url, null, null, $joinerCookie);
+}
+
+/**
+ * A fresh challenge, so each section starts from a known seating state.
+ *
+ * @return array{matchId: string, playUrl: string, creatorUrl: string, creatorToken: string}
+ */
+function create_challenge(string $baseUrl): array
+{
+    $created = request('POST', $baseUrl . '/api/challenges', ['minutes' => 5, 'white' => 'creator']);
+    $creatorUrl = (string) ($created['json']['creatorUrl'] ?? '');
+
+    return [
+        'matchId' => (string) ($created['json']['matchId'] ?? ''),
+        'playUrl' => (string) ($created['json']['playUrl'] ?? ''),
+        'creatorUrl' => $creatorUrl,
+        'creatorToken' => creator_token_from($creatorUrl),
+    ];
+}
+
 fwrite(STDOUT, "Checking {$baseUrl}\n\nCreate a challenge via the API\n");
 
 $created = request('POST', $baseUrl . '/api/challenges', ['minutes' => 5, 'white' => 'creator']);
@@ -101,8 +183,7 @@ check('play url is just the match id', $playUrl === $baseUrl . '/game/' . $match
 check('creator url carries a token', str_starts_with((string) $creatorUrl, $playUrl . '?token='));
 check('play url carries no token', !str_contains((string) $playUrl, 'token'));
 
-$creatorToken = (string) parse_url((string) $creatorUrl, PHP_URL_QUERY);
-$creatorToken = substr($creatorToken, strlen('token='));
+$creatorToken = creator_token_from((string) $creatorUrl);
 
 fwrite(STDOUT, "\nIds are unique per challenge\n");
 $second = request('POST', $baseUrl . '/api/challenges', ['minutes' => 10, 'white' => 'opponent']);
@@ -135,6 +216,68 @@ check('public state does not contain the raw token', !str_contains($asVisitor['b
 
 $publicPage = request('GET', $playUrl);
 check('play link page does not contain the creator token', !str_contains($publicPage['body'], $creatorToken));
+
+fwrite(STDOUT, "\nWaiting for an opponent\n");
+$game = create_challenge($baseUrl);
+
+$creatorWaiting = request('GET', $game['creatorUrl']);
+check('the creator page says it is waiting', page_attribute($creatorWaiting['body'], 'status') === 'waiting');
+check('the creator is told an opponent is missing', stripos($creatorWaiting['body'], 'waiting for the opponent') !== false);
+check('the creator link does not claim the joiner seat', set_cookie_header($creatorWaiting['headers'], 'joiner') === null);
+check(
+    'the match stays waiting until someone joins',
+    (match_state($baseUrl, $game['matchId'], null, $game['creatorToken'])['json']['status'] ?? null) === 'waiting',
+);
+
+fwrite(STDOUT, "\nThe first play-link visitor is seated as joiner\n");
+$joined = request('GET', $game['playUrl']);
+$joinerSetCookie = set_cookie_header($joined['headers'], 'joiner');
+$joinerCookie = (string) cookie_pair($joinerSetCookie);
+[$joinerCookieName, $joinerToken] = explode('=', $joinerCookie, 2) + ['', ''];
+check('the play link issues a joiner cookie', $joinerSetCookie !== null, implode(' | ', $joined['headers']));
+check('the joiner cookie is httpOnly', stripos((string) $joinerSetCookie, 'HttpOnly') !== false, (string) $joinerSetCookie);
+check('the joiner cookie survives the link being clicked from elsewhere', stripos((string) $joinerSetCookie, 'SameSite=Lax') !== false, (string) $joinerSetCookie);
+check('the play page speaks to the opponent as the joiner', page_attribute($joined['body'], 'role') === 'joiner');
+
+$asJoiner = match_state($baseUrl, $game['matchId'], $joinerCookie);
+check('the cookie resolves to the joiner role', ($asJoiner['json']['you']['role'] ?? null) === 'joiner', $asJoiner['body']);
+check('the match is ready once both are seated', ($asJoiner['json']['status'] ?? null) === 'ready');
+
+$creatorAfterJoin = request('GET', $game['creatorUrl']);
+check('the creator page turns ready', page_attribute($creatorAfterJoin['body'], 'status') === 'ready');
+check('the creator is no longer told to wait', stripos($creatorAfterJoin['body'], 'waiting for the opponent') === false);
+
+$revisit = request('GET', $game['playUrl'], null, null, $joinerCookie);
+check('a revisit with the cookie is still the joiner', page_attribute($revisit['body'], 'role') === 'joiner');
+check('a revisit does not re-issue a seat', set_cookie_header($revisit['headers'], 'joiner') === null);
+
+fwrite(STDOUT, "\nThe joiner seat cannot be stolen\n");
+$thirdVisitor = request('GET', $game['playUrl']);
+check('a second browser is not handed the seat', set_cookie_header($thirdVisitor['headers'], 'joiner') === null);
+check('a second browser is only a spectator', page_attribute($thirdVisitor['body'], 'role') === 'spectator');
+check(
+    'a second browser is a spectator in the state api too',
+    (match_state($baseUrl, $game['matchId'])['json']['you']['role'] ?? null) === 'spectator',
+);
+check(
+    'the original joiner keeps the seat',
+    (match_state($baseUrl, $game['matchId'], $joinerCookie)['json']['you']['role'] ?? null) === 'joiner',
+);
+check(
+    'a lost joiner cookie has no recovery path',
+    (match_state($baseUrl, $game['matchId'], $joinerCookieName . '=not-the-real-token')['json']['you']['role'] ?? null) === 'spectator',
+);
+
+fwrite(STDOUT, "\nThe creator link always wins\n");
+check(
+    'the creator token beats a joiner cookie',
+    (match_state($baseUrl, $game['matchId'], $joinerCookie, $game['creatorToken'])['json']['you']['role'] ?? null) === 'creator',
+);
+check('the joiner token stays secret', !preg_match('/token_hash|joinerToken/i', $asJoiner['body']), $asJoiner['body']);
+check(
+    'public state does not contain the raw joiner token',
+    $joinerToken !== '' && !str_contains(match_state($baseUrl, $game['matchId'])['body'], $joinerToken),
+);
 
 fwrite(STDOUT, "\nPretty URLs and HTML pages\n");
 check('create form responds at /', request('GET', $baseUrl . '/')['status'] === 200);

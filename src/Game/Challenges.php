@@ -7,7 +7,7 @@ namespace Chess\Game;
 use Chess\Clock;
 use Chess\Security\Tokens;
 
-/** Creates challenges and answers "who is this visitor?" for an existing one. */
+/** Creates challenges and looks them up again; seating is `Seating`'s job. */
 final class Challenges
 {
     public function __construct(
@@ -38,18 +38,5 @@ final class Challenges
     public function find(string $matchId): ?GameMatch
     {
         return $this->matches->find($matchId);
-    }
-
-    /**
-     * The creator token in the URL is the only thing that proves the creator
-     * role, which is what lets a saved creator link survive lost cookies.
-     */
-    public function roleFor(GameMatch $match, ?string $creatorToken): Role
-    {
-        if ($creatorToken !== null && $this->tokens->verify($creatorToken, $match->creatorTokenHash)) {
-            return Role::Creator;
-        }
-
-        return Role::Spectator;
     }
 }

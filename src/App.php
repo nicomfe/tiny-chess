@@ -7,6 +7,7 @@ namespace Chess;
 use Chess\Game\Challenges;
 use Chess\Game\MatchLinkFactory;
 use Chess\Game\MatchRepository;
+use Chess\Game\Seating;
 use Chess\Http\ChallengeController;
 use Chess\Http\MatchController;
 use Chess\Http\MethodNotAllowed;
@@ -28,16 +29,16 @@ final class App
     {
         $config = Config::load($projectRoot);
 
-        $challenges = new Challenges(
-            new MatchRepository(Database::connect($config)),
-            new Tokens($config->appSecret()),
-            new Clock(),
-        );
+        $matches = new MatchRepository(Database::connect($config));
+        $tokens = new Tokens($config->appSecret());
+
+        $challenges = new Challenges($matches, $tokens, new Clock());
+        $seating = new Seating($matches, $tokens);
         $linkFactory = new MatchLinkFactory($config->baseUrlOverride());
         $view = new View($projectRoot . '/templates');
 
         $challengeController = new ChallengeController($challenges, $linkFactory, $view);
-        $matchController = new MatchController($challenges, $linkFactory, $view);
+        $matchController = new MatchController($challenges, $seating, $linkFactory, $view);
 
         $router = new Router();
         $router->add('GET', '/', $challengeController->showCreateForm(...));

@@ -45,7 +45,7 @@ docker compose logs -f php
 | ------------------ | ---------------------------------------------------------------- |
 | `public/`          | Document root: front controller plus static assets               |
 | `src/`             | Application code, autoloaded as `Chess\` (PSR-4)                 |
-| `src/Game/`        | Match domain: ids, time control, roles, challenge creation       |
+| `src/Game/`        | Match domain: ids, time control, challenge creation, seating     |
 | `templates/`       | Plain PHP views                                                  |
 | `db/migrations/`   | Numbered SQL migrations, applied by `scripts/migrate.php`        |
 | `docker/`          | Local nginx and php-fpm images                                   |
@@ -60,3 +60,22 @@ Apache `.htaccess` rewrite arrives with the production hosting ticket.
 | `/`                       | Create a challenge                                          |
 | `/game/{matchId}`         | The shareable play link — opponent and spectators           |
 | `/game/{matchId}?token=…` | The creator's private link; the token proves creator role   |
+
+## Roles
+
+Nobody signs in, so a role is whatever credential the request happens to carry:
+
+| Role        | How it is proved                                                           |
+| ----------- | -------------------------------------------------------------------------- |
+| `creator`   | The `token` query param on the creator link, checked against a stored hash  |
+| `joiner`    | An httpOnly cookie, set when that browser first opened the play link        |
+| `spectator` | Anyone else                                                                |
+
+The creator token always wins, which is what lets a saved creator link work on any device and
+without cookies. The joiner seat goes to the first play-link visitor who is not the creator, and is
+then locked: the match becomes `ready`, a second browser only ever watches, and a browser that
+loses its cookie has no way back in. Every state response reports the caller's role under
+`you.role`.
+
+Only opening the play page can claim a seat — the state API reads roles but never hands one out, so
+a background poll cannot seat anyone by accident.

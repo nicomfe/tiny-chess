@@ -30,6 +30,30 @@ final class MatchRepository
         ]);
     }
 
+    /**
+     * Persists a match whose joiner seat has just been filled, or reports false
+     * if someone else got there first. The preconditions live in the WHERE so
+     * two simultaneous visitors cannot both be seated: only one UPDATE can
+     * match a row whose seat is still empty.
+     */
+    public function claimJoiner(GameMatch $seated): bool
+    {
+        $statement = $this->pdo->prepare(
+            'UPDATE matches
+                SET joiner_token_hash = :joiner_token_hash, status = :status
+              WHERE id = :id AND joiner_token_hash IS NULL AND status = :waiting',
+        );
+
+        $statement->execute([
+            'joiner_token_hash' => $seated->joinerTokenHash,
+            'status' => $seated->status->value,
+            'id' => $seated->id,
+            'waiting' => MatchStatus::Waiting->value,
+        ]);
+
+        return $statement->rowCount() === 1;
+    }
+
     public function find(string $matchId): ?GameMatch
     {
         if (!MatchId::isWellFormed($matchId)) {

@@ -113,6 +113,14 @@ button:hover {
     margin: 0;
 }
 
+.standby {
+    background: rgba(122, 162, 247, 0.1);
+    border-left: 3px solid var(--accent);
+    color: var(--muted);
+    margin: 0 0 1.5rem;
+    padding: 0.75rem 1rem;
+}
+
 .link-card {
     background: var(--panel);
     border: 1px solid var(--panel-accent);
