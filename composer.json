@@ -1,0 +1,22 @@
+{
+    "name": "nicofetter/chess-game",
+    "description": "Casual timed chess challenges over a shared link",
+    "license": "MIT",
+    "type": "project",
+    "require": {
+        "php": ">=8.2",
+        "ext-pdo": "*",
+        "ext-json": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Chess\\": "src/"
+        },
+        "files": [
+            "src/helpers.php"
+        ]
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

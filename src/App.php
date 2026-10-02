@@ -1,0 +1,71 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Chess;
+
+use Chess\Game\Challenges;
+use Chess\Game\MatchLinkFactory;
+use Chess\Game\MatchRepository;
+use Chess\Http\ChallengeController;
+use Chess\Http\MatchController;
+use Chess\Http\MethodNotAllowed;
+use Chess\Http\Request;
+use Chess\Http\Response;
+use Chess\Http\Router;
+use Chess\Security\Tokens;
+use Chess\View\View;
+
+final class App
+{
+    private function __construct(
+        private readonly Router $router,
+        private readonly View $view,
+    ) {
+    }
+
+    public static function boot(string $projectRoot): self
+    {
+        $config = Config::load($projectRoot);
+
+        $challenges = new Challenges(
+            new MatchRepository(Database::connect($config)),
+            new Tokens($config->appSecret()),
+            new Clock(),
+        );
+        $linkFactory = new MatchLinkFactory($config->baseUrlOverride());
+        $view = new View($projectRoot . '/templates');
+
+        $challengeController = new ChallengeController($challenges, $linkFactory, $view);
+        $matchController = new MatchController($challenges, $linkFactory, $view);
+
+        $router = new Router();
+        $router->add('GET', '/', $challengeController->showCreateForm(...));
+        $router->add('POST', '/challenges', $challengeController->create(...));
+        $router->add('POST', '/api/challenges', $challengeController->createViaApi(...));
+        $router->add('GET', '/game/{matchId}', $matchController->show(...));
+        $router->add('GET', '/api/matches/{matchId}', $matchController->state(...));
+
+        return new self($router, $view);
+    }
+
+    public function handle(Request $request): Response
+    {
+        try {
+            $response = $this->router->dispatch($request);
+        } catch (MethodNotAllowed) {
+            return $this->error($request, 405, 'method_not_allowed');
+        }
+
+        return $response ?? $this->error($request, 404, 'not_found');
+    }
+
+    private function error(Request $request, int $status, string $code): Response
+    {
+        if ($request->wantsJson()) {
+            return Response::json(['error' => $code], $status);
+        }
+
+        return Response::html($this->view->render('not-found', ['title' => 'Page not found']), $status);
+    }
+}
