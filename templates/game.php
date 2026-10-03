@@ -87,6 +87,17 @@ $statusLine = match ($match->status) {
             </div>
             <p class="turn" data-turn role="status"></p>
             <p class="move-error" data-move-error role="alert" hidden></p>
+            <?php if ($ownColor !== null && !$isFinished): ?>
+                <div class="actions" data-actions>
+                    <p class="actions__offer" data-draw-status hidden></p>
+                    <div class="actions__buttons">
+                        <button type="button" data-offer-draw>Offer draw</button>
+                        <button type="button" data-accept-draw hidden>Accept draw</button>
+                        <button type="button" data-decline-draw hidden>Decline</button>
+                        <button type="button" class="actions__resign" data-resign>Resign</button>
+                    </div>
+                </div>
+            <?php endif; ?>
             <ol class="moves" data-move-list></ol>
         </section>
     <?php endif; ?>
@@ -114,7 +125,7 @@ $statusLine = match ($match->status) {
         <p class="lead">You are the opponent in this game, playing
             <?= $match->creatorPlaysWhite() ? 'black' : 'white' ?>. Stay in this browser to keep your seat —
             it is what remembers you, so a refresh is fine but another browser would only be watching.</p>
-    <?php else: ?>
+    <?php elseif ($role === Role::Spectator): ?>
         <p class="lead">You are watching this challenge<?= $isWaiting ? '' : '. Both seats are taken, so you cannot move pieces' ?>.
             <?= $isWaiting ? 'The board appears here once play begins.' : '' ?></p>
     <?php endif; ?>

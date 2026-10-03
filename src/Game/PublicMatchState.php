@@ -61,7 +61,7 @@ final class PublicMatchState
                 'running' => $clocks['running'],
             ],
             'result' => self::result($match),
-            'drawOffer' => null,
+            'drawOffer' => $match->drawOfferBy === null ? null : ['by' => $match->drawOfferBy->value],
         ];
     }
 

@@ -202,6 +202,32 @@ function submit_move(string $baseUrl, string $matchId, string $uci, ?string $joi
 }
 
 /**
+ * Resigns as whoever the given credentials make the caller.
+ *
+ * @return array{status: int, headers: array<int, string>, body: string, json: array<string, mixed>|null}
+ */
+function resign(string $baseUrl, string $matchId, ?string $joinerCookie = null, string $creatorToken = ''): array
+{
+    $url = $baseUrl . '/api/matches/' . $matchId . '/resign'
+        . ($creatorToken === '' ? '' : '?token=' . urlencode($creatorToken));
+
+    return request('POST', $url, [], null, $joinerCookie);
+}
+
+/**
+ * Offers, accepts, or declines a draw as whoever the given credentials make the caller.
+ *
+ * @return array{status: int, headers: array<int, string>, body: string, json: array<string, mixed>|null}
+ */
+function draw_action(string $baseUrl, string $matchId, string $action, ?string $joinerCookie = null, string $creatorToken = ''): array
+{
+    $url = $baseUrl . '/api/matches/' . $matchId . '/draw'
+        . ($creatorToken === '' ? '' : '?token=' . urlencode($creatorToken));
+
+    return request('POST', $url, ['action' => $action], null, $joinerCookie);
+}
+
+/**
  * Plays a line from the starting position, white first, so a check can set up a
  * specific position before testing it. Reports whether every ply was accepted.
  *
@@ -709,6 +735,166 @@ if (force_flag($timed['matchId'], 'black')) {
     fwrite(STDOUT, "  skip timeout checks — no local MySQL on port 3307\n");
 }
 
+fwrite(STDOUT, "\nA seated player can resign\n");
+$resigning = seated_game($baseUrl);
+$resigned = resign($baseUrl, $resigning['matchId'], null, $resigning['creatorToken']);
+check('the creator can resign while ready', $resigned['status'] === 200, $resigned['body']);
+check('resigning finishes the match', ($resigned['json']['status'] ?? null) === 'finished', $resigned['body']);
+check('the opponent wins', ($resigned['json']['result']['winner'] ?? null) === 'black', $resigned['body']);
+check('the result reason is resign', ($resigned['json']['result']['reason'] ?? null) === 'resign', $resigned['body']);
+
+$joinerResigns = seated_game($baseUrl);
+$blackResigned = resign($baseUrl, $joinerResigns['matchId'], $joinerResigns['joinerCookie']);
+check('the joiner can resign while ready', $blackResigned['status'] === 200, $blackResigned['body']);
+check('white wins when black resigns', ($blackResigned['json']['result']['winner'] ?? null) === 'white', $blackResigned['body']);
+
+$activeResign = seated_game($baseUrl);
+play_line($baseUrl, $activeResign, ['e2e4']);
+$resignedActive = resign($baseUrl, $activeResign['matchId'], $activeResign['joinerCookie']);
+check('a player can resign while the game is active', $resignedActive['status'] === 200, $resignedActive['body']);
+check('the active resignation is a finished result', ($resignedActive['json']['status'] ?? null) === 'finished', $resignedActive['body']);
+
+$unseatedResign = create_challenge($baseUrl);
+$tooEarlyResign = resign($baseUrl, $unseatedResign['matchId'], null, $unseatedResign['creatorToken']);
+check('resigning while waiting is refused', $tooEarlyResign['status'] === 409, "got {$tooEarlyResign['status']}");
+check('the waiting resignation names the reason', ($tooEarlyResign['json']['error'] ?? null) === 'match_not_started', $tooEarlyResign['body']);
+
+$watched = seated_game($baseUrl);
+$spectatorResign = resign($baseUrl, $watched['matchId']);
+check('a spectator cannot resign', $spectatorResign['status'] === 403, "got {$spectatorResign['status']}");
+check('the spectator is told they are not a player', ($spectatorResign['json']['error'] ?? null) === 'not_a_player', $spectatorResign['body']);
+check(
+    'a refused spectator resign leaves the match ready',
+    (match_state($baseUrl, $watched['matchId'])['json']['status'] ?? null) === 'ready',
+);
+
+$afterResign = resign($baseUrl, $resigning['matchId'], $resigning['joinerCookie']);
+check('a second resign is rejected', $afterResign['status'] === 409, "got {$afterResign['status']}");
+check('the second resign says the game is over', ($afterResign['json']['error'] ?? null) === 'match_finished', $afterResign['body']);
+$moveAfterResign = submit_move($baseUrl, $resigning['matchId'], 'e2e4', $resigning['joinerCookie']);
+check('a move after resign is rejected', $moveAfterResign['status'] === 409, "got {$moveAfterResign['status']}");
+check('the move after resign says the game is over', ($moveAfterResign['json']['error'] ?? null) === 'match_finished', $moveAfterResign['body']);
+
+$resignReplay = request('GET', $resigning['playUrl']);
+check('a resigned play link still serves the board', page_attribute($resignReplay['body'], 'fen') !== null, $resignReplay['body']);
+check('the resigned page names the result', str_contains($resignReplay['body'], 'resignation'), $resignReplay['body']);
+$creatorResignReplay = request('GET', $resigning['creatorUrl']);
+check('the creator replay page names the resignation', str_contains($creatorResignReplay['body'], 'resignation'), $creatorResignReplay['body']);
+
+fwrite(STDOUT, "\nEither seated player can offer a draw\n");
+$offering = seated_game($baseUrl);
+$offered = draw_action($baseUrl, $offering['matchId'], 'offer', null, $offering['creatorToken']);
+check('the creator can offer a draw while ready', $offered['status'] === 200, $offered['body']);
+check('the match stays ready after an offer', ($offered['json']['status'] ?? null) === 'ready', $offered['body']);
+check('the offer is stored as white', ($offered['json']['drawOffer']['by'] ?? null) === 'white', $offered['body']);
+
+$opponentSeesOffer = match_state($baseUrl, $offering['matchId'], $offering['joinerCookie']);
+check('the opponent sees the outstanding offer', ($opponentSeesOffer['json']['drawOffer']['by'] ?? null) === 'white', $opponentSeesOffer['body']);
+$spectatorSeesOffer = match_state($baseUrl, $offering['matchId']);
+check('a spectator sees the outstanding offer', ($spectatorSeesOffer['json']['drawOffer']['by'] ?? null) === 'white', $spectatorSeesOffer['body']);
+
+$counterOffer = draw_action($baseUrl, $offering['matchId'], 'offer', $offering['joinerCookie']);
+check('the opponent cannot replace an outstanding offer', $counterOffer['status'] === 409, "got {$counterOffer['status']}");
+check('a counter-offer names the reason', ($counterOffer['json']['error'] ?? null) === 'draw_already_offered', $counterOffer['body']);
+check(
+    'the original offer is still white’s',
+    (match_state($baseUrl, $offering['matchId'])['json']['drawOffer']['by'] ?? null) === 'white',
+);
+
+fwrite(STDOUT, "\nThe opponent can accept or decline a draw\n");
+$accepted = seated_game($baseUrl);
+draw_action($baseUrl, $accepted['matchId'], 'offer', $accepted['joinerCookie']);
+$agreed = draw_action($baseUrl, $accepted['matchId'], 'accept', null, $accepted['creatorToken']);
+check('the opponent can accept a draw', $agreed['status'] === 200, $agreed['body']);
+check('an accepted draw finishes the match', ($agreed['json']['status'] ?? null) === 'finished', $agreed['body']);
+check('an accepted draw has no winner', is_null_field($agreed['json']['result'] ?? null, 'winner'), $agreed['body']);
+check('the result reason is agreement', ($agreed['json']['result']['reason'] ?? null) === 'agreement', $agreed['body']);
+check('the offer is cleared once the game is over', is_null_field($agreed['json'], 'drawOffer'), $agreed['body']);
+
+$declined = seated_game($baseUrl);
+draw_action($baseUrl, $declined['matchId'], 'offer', null, $declined['creatorToken']);
+$refused = draw_action($baseUrl, $declined['matchId'], 'decline', $declined['joinerCookie']);
+check('the opponent can decline a draw', $refused['status'] === 200, $refused['body']);
+check('declining leaves the match ready', ($refused['json']['status'] ?? null) === 'ready', $refused['body']);
+check('declining clears the offer', is_null_field($refused['json'], 'drawOffer'), $refused['body']);
+
+$ownOffer = seated_game($baseUrl);
+draw_action($baseUrl, $ownOffer['matchId'], 'offer', null, $ownOffer['creatorToken']);
+$selfAccept = draw_action($baseUrl, $ownOffer['matchId'], 'accept', null, $ownOffer['creatorToken']);
+check('the offerer cannot accept their own offer', $selfAccept['status'] === 409, "got {$selfAccept['status']}");
+check('accepting your own offer names the reason', ($selfAccept['json']['error'] ?? null) === 'own_draw_offer', $selfAccept['body']);
+$selfDecline = draw_action($baseUrl, $ownOffer['matchId'], 'decline', null, $ownOffer['creatorToken']);
+check('the offerer cannot decline their own offer', $selfDecline['status'] === 409, $selfDecline['body']);
+check(
+    'a refused self-answer leaves the offer up',
+    (match_state($baseUrl, $ownOffer['matchId'])['json']['drawOffer']['by'] ?? null) === 'white',
+);
+
+$noOffer = seated_game($baseUrl);
+$acceptNone = draw_action($baseUrl, $noOffer['matchId'], 'accept', $noOffer['joinerCookie']);
+check('accepting with no offer is refused', $acceptNone['status'] === 409, "got {$acceptNone['status']}");
+check('the empty accept names the reason', ($acceptNone['json']['error'] ?? null) === 'no_draw_offer', $acceptNone['body']);
+$declineNone = draw_action($baseUrl, $noOffer['matchId'], 'decline', null, $noOffer['creatorToken']);
+check('declining with no offer is refused', $declineNone['status'] === 409, $declineNone['body']);
+
+fwrite(STDOUT, "\nA new move clears an outstanding draw offer\n");
+$clearedByMove = seated_game($baseUrl);
+draw_action($baseUrl, $clearedByMove['matchId'], 'offer', $clearedByMove['joinerCookie']);
+$afterOfferMove = submit_move($baseUrl, $clearedByMove['matchId'], 'e2e4', null, $clearedByMove['creatorToken']);
+check('the move after an offer is accepted', $afterOfferMove['status'] === 200, $afterOfferMove['body']);
+check('the accepted move clears the offer', is_null_field($afterOfferMove['json'], 'drawOffer'), $afterOfferMove['body']);
+check(
+    'a later poll also shows no offer',
+    is_null_field(match_state($baseUrl, $clearedByMove['matchId'])['json'], 'drawOffer'),
+);
+
+fwrite(STDOUT, "\nSpectators cannot resign or negotiate draws\n");
+$watchedDraw = seated_game($baseUrl);
+foreach (['offer', 'accept', 'decline'] as $action) {
+    $asSpectator = draw_action($baseUrl, $watchedDraw['matchId'], $action);
+    check("a spectator cannot {$action} a draw", $asSpectator['status'] === 403, $asSpectator['body']);
+    check(
+        "the spectator {$action} is told they are not a player",
+        ($asSpectator['json']['error'] ?? null) === 'not_a_player',
+        $asSpectator['body'],
+    );
+}
+check(
+    'spectator draw attempts leave the match ready',
+    (match_state($baseUrl, $watchedDraw['matchId'])['json']['status'] ?? null) === 'ready',
+);
+check(
+    'spectator draw attempts leave no offer',
+    is_null_field(match_state($baseUrl, $watchedDraw['matchId'])['json'], 'drawOffer'),
+);
+
+$waitingDraw = create_challenge($baseUrl);
+$tooEarlyDraw = draw_action($baseUrl, $waitingDraw['matchId'], 'offer', null, $waitingDraw['creatorToken']);
+check('offering a draw while waiting is refused', $tooEarlyDraw['status'] === 409, "got {$tooEarlyDraw['status']}");
+
+fwrite(STDOUT, "\nAn agreed draw is a frozen replay\n");
+$drawn = seated_game($baseUrl);
+draw_action($baseUrl, $drawn['matchId'], 'offer', null, $drawn['creatorToken']);
+draw_action($baseUrl, $drawn['matchId'], 'accept', $drawn['joinerCookie']);
+$drawAgain = draw_action($baseUrl, $drawn['matchId'], 'offer', null, $drawn['creatorToken']);
+check('a draw action after agreement is rejected', $drawAgain['status'] === 409, "got {$drawAgain['status']}");
+check('the late draw action says the game is over', ($drawAgain['json']['error'] ?? null) === 'match_finished', $drawAgain['body']);
+$resignAfterDraw = resign($baseUrl, $drawn['matchId'], $drawn['joinerCookie']);
+check('resign after agreement is rejected', $resignAfterDraw['status'] === 409, "got {$resignAfterDraw['status']}");
+$moveAfterDraw = submit_move($baseUrl, $drawn['matchId'], 'e2e4', null, $drawn['creatorToken']);
+check('a move after agreement is rejected', $moveAfterDraw['status'] === 409, $moveAfterDraw['body']);
+
+$drawReplay = request('GET', $drawn['playUrl']);
+check('an agreed-draw play link still serves the board', page_attribute($drawReplay['body'], 'fen') !== null, $drawReplay['body']);
+check('the agreed-draw page names the result', str_contains($drawReplay['body'], 'agreement'), $drawReplay['body']);
+$creatorDrawReplay = request('GET', $drawn['creatorUrl']);
+check('the creator replay page names the agreed draw', str_contains($creatorDrawReplay['body'], 'agreement'), $creatorDrawReplay['body']);
+
+check('reading the resign endpoint is rejected', request('GET', $baseUrl . '/api/matches/' . $drawn['matchId'] . '/resign')['status'] === 405);
+check('reading the draw endpoint is rejected', request('GET', $baseUrl . '/api/matches/' . $drawn['matchId'] . '/draw')['status'] === 405);
+check('resigning an unknown match is a 404', resign($baseUrl, str_repeat('a', 32))['status'] === 404);
+check('drawing in an unknown match is a 404', draw_action($baseUrl, str_repeat('a', 32), 'offer')['status'] === 404);
+
 fwrite(STDOUT, "\nThe board on the page\n");
 $board = seated_game($baseUrl);
 
@@ -716,6 +902,7 @@ $creatorBoard = request('GET', $board['creatorUrl']);
 check('the creator is given a board', page_attribute($creatorBoard['body'], 'fen') === START_FEN, (string) page_attribute($creatorBoard['body'], 'fen'));
 check('white sits at the bottom for white', page_attribute($creatorBoard['body'], 'orientation') === 'white');
 check('the creator is told they play white', page_attribute($creatorBoard['body'], 'color') === 'white');
+check('a seated player is given resign and draw controls', str_contains($creatorBoard['body'], 'data-resign') && str_contains($creatorBoard['body'], 'data-offer-draw'));
 
 $joinerBoard = request('GET', $board['playUrl'], null, null, $board['joinerCookie']);
 check('black sits at the bottom for black', page_attribute($joinerBoard['body'], 'orientation') === 'black');
@@ -724,6 +911,7 @@ check('the opponent is told they play black', page_attribute($joinerBoard['body'
 $spectatorBoard = request('GET', $board['playUrl']);
 check('a spectator sees white at the bottom', page_attribute($spectatorBoard['body'], 'orientation') === 'white');
 check('a spectator is handed no color, so the board stays view-only', page_attribute($spectatorBoard['body'], 'color') === '');
+check('a spectator is given no resign or draw controls', !str_contains($spectatorBoard['body'], 'data-resign') && !str_contains($spectatorBoard['body'], 'data-offer-draw'));
 
 check('the board library is served', request('GET', $baseUrl . '/assets/vendor/chessground.min.js')['status'] === 200);
 check('the board stylesheet is served', request('GET', $baseUrl . '/assets/vendor/chessground.css')['status'] === 200);

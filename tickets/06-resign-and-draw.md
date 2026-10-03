@@ -4,9 +4,9 @@
 
 **Blocked by:** End games automatically and show frozen replay
 
-- [ ] Only creator or joiner can resign, and only while the game is in progress (`ready` or `active`); the opponent wins and status becomes `finished`.
-- [ ] Either seated player can offer a draw; the offer is stored on the match and visible in polled state.
-- [ ] The opponent can accept (draw, `finished`) or decline (offer cleared, play continues).
-- [ ] A new accepted move clears an outstanding draw offer as appropriate.
-- [ ] Spectators cannot resign, offer, accept, or decline.
-- [ ] After resign or agreed draw, the URLs show the frozen replay and result; further moves and draw/resign actions are rejected.
+- [x] Only creator or joiner can resign, and only while the game is in progress (`ready` or `active`); the opponent wins and status becomes `finished`.
+- [x] Either seated player can offer a draw; the offer is stored on the match and visible in polled state.
+- [x] The opponent can accept (draw, `finished`) or decline (offer cleared, play continues).
+- [x] A new accepted move clears an outstanding draw offer as appropriate.
+- [x] Spectators cannot resign, offer, accept, or decline.
+- [x] After resign or agreed draw, the URLs show the frozen replay and result; further moves and draw/resign actions are rejected.

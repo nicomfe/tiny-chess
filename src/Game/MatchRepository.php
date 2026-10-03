@@ -118,7 +118,8 @@ final class MatchRepository
                     black_remaining_ms = :black_remaining_ms,
                     turn_started_at = :turn_started_at,
                     result_winner_color = :result_winner_color,
-                    result_reason = :result_reason
+                    result_reason = :result_reason,
+                    draw_offer_color = :draw_offer_color
               WHERE id = :id',
         );
         $statement->execute([
@@ -129,6 +130,7 @@ final class MatchRepository
             'turn_started_at' => $match->turnStartedAt?->format('Y-m-d H:i:s.v'),
             'result_winner_color' => $match->resultWinner?->value,
             'result_reason' => $match->resultReason?->value,
+            'draw_offer_color' => $match->drawOfferBy?->value,
             'id' => $match->id,
         ]);
     }
@@ -142,7 +144,8 @@ final class MatchRepository
                     black_remaining_ms = :black_remaining_ms,
                     turn_started_at = :turn_started_at,
                     result_winner_color = :result_winner_color,
-                    result_reason = :result_reason
+                    result_reason = :result_reason,
+                    draw_offer_color = :draw_offer_color
               WHERE id = :id',
         );
         $statement->execute([
@@ -152,6 +155,18 @@ final class MatchRepository
             'turn_started_at' => $match->turnStartedAt?->format('Y-m-d H:i:s.v'),
             'result_winner_color' => $match->resultWinner?->value,
             'result_reason' => $match->resultReason?->value,
+            'draw_offer_color' => $match->drawOfferBy?->value,
+            'id' => $match->id,
+        ]);
+    }
+
+    public function saveDrawOffer(GameMatch $match): void
+    {
+        $statement = $this->pdo->prepare(
+            'UPDATE matches SET draw_offer_color = :draw_offer_color WHERE id = :id',
+        );
+        $statement->execute([
+            'draw_offer_color' => $match->drawOfferBy?->value,
             'id' => $match->id,
         ]);
     }

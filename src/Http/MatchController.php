@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Chess\Http;
 
+use Chess\Game\ActionRejected;
+use Chess\Game\ActionRejection;
 use Chess\Game\Challenges;
+use Chess\Game\Draws;
 use Chess\Game\GameMatch;
 use Chess\Game\MatchLinkFactory;
 use Chess\Game\MatchSnapshot;
@@ -13,6 +16,7 @@ use Chess\Game\MoveRejected;
 use Chess\Game\MoveRejection;
 use Chess\Game\Moves;
 use Chess\Game\PublicMatchState;
+use Chess\Game\Resignations;
 use Chess\Game\Role;
 use Chess\Game\Seat;
 use Chess\Game\Seating;
@@ -25,6 +29,8 @@ final class MatchController
         private readonly Challenges $challenges,
         private readonly Seating $seating,
         private readonly Moves $moves,
+        private readonly Resignations $resignations,
+        private readonly Draws $draws,
         private readonly MatchClock $matchClock,
         private readonly MatchLinkFactory $linkFactory,
         private readonly View $view,
@@ -101,6 +107,49 @@ final class MatchController
         return $this->stateResponse($request, $snapshot, $role);
     }
 
+    /** @param array<string, string> $params */
+    public function resign(Request $request, array $params): Response
+    {
+        $match = $this->challenges->find($params['matchId']);
+        if ($match === null) {
+            return Response::json(['error' => 'match_not_found'], 404);
+        }
+
+        $role = $this->roleFor($request, $match);
+
+        try {
+            $snapshot = $this->resignations->resign($match, $role);
+        } catch (ActionRejected $rejected) {
+            return $this->actionRejection($rejected->reason);
+        }
+
+        return $this->stateResponse($request, $snapshot, $role);
+    }
+
+    /** @param array<string, string> $params */
+    public function draw(Request $request, array $params): Response
+    {
+        $match = $this->challenges->find($params['matchId']);
+        if ($match === null) {
+            return Response::json(['error' => 'match_not_found'], 404);
+        }
+
+        $role = $this->roleFor($request, $match);
+
+        try {
+            $snapshot = match ($request->bodyParam('action')) {
+                'offer' => $this->draws->offer($match, $role),
+                'accept' => $this->draws->accept($match, $role),
+                'decline' => $this->draws->decline($match, $role),
+                default => throw ActionRejected::because(ActionRejection::MalformedAction),
+            };
+        } catch (ActionRejected $rejected) {
+            return $this->actionRejection($rejected->reason);
+        }
+
+        return $this->stateResponse($request, $snapshot, $role);
+    }
+
     private function roleFor(Request $request, GameMatch $match): Role
     {
         return $this->seating->resolve(
@@ -128,6 +177,14 @@ final class MatchController
         );
     }
 
+    private function actionRejection(ActionRejection $reason): Response
+    {
+        return Response::json(
+            ['error' => $reason->value, 'message' => $reason->message()],
+            self::statusForAction($reason),
+        );
+    }
+
     private static function statusFor(MoveRejection $reason): int
     {
         return match ($reason) {
@@ -135,6 +192,16 @@ final class MatchController
             MoveRejection::NotAPlayer => 403,
             MoveRejection::MatchNotStarted, MoveRejection::MatchFinished, MoveRejection::NotYourTurn => 409,
             MoveRejection::MalformedMove, MoveRejection::IllegalMove => 422,
+        };
+    }
+
+    private static function statusForAction(ActionRejection $reason): int
+    {
+        return match ($reason) {
+            ActionRejection::MatchNotFound => 404,
+            ActionRejection::NotAPlayer => 403,
+            ActionRejection::MatchNotStarted, ActionRejection::MatchFinished, ActionRejection::NoDrawOffer, ActionRejection::OwnDrawOffer, ActionRejection::DrawAlreadyOffered => 409,
+            ActionRejection::MalformedAction => 422,
         };
     }
 

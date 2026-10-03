@@ -230,6 +230,33 @@ button:hover {
     padding: 0.6rem 0.9rem;
 }
 
+.actions {
+    margin: 0 0 1rem;
+}
+
+.actions__offer {
+    color: var(--muted);
+    margin: 0 0 0.6rem;
+    text-align: center;
+}
+
+.actions__buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+.actions__buttons button {
+    background: var(--panel-accent);
+    color: var(--text);
+}
+
+.actions__resign {
+    background: rgba(242, 139, 130, 0.16);
+    color: var(--danger);
+}
+
 .promotion {
     background: var(--panel);
     border: 1px solid var(--panel-accent);

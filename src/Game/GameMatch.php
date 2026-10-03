@@ -24,6 +24,7 @@ final class GameMatch
         public readonly ?DateTimeImmutable $turnStartedAt = null,
         public readonly ?Color $resultWinner = null,
         public readonly ?GameResultReason $resultReason = null,
+        public readonly ?Color $drawOfferBy = null,
     ) {
     }
 
@@ -34,6 +35,7 @@ final class GameMatch
         $turnStartedAt = $row['turn_started_at'] ?? null;
         $resultWinner = $row['result_winner_color'] ?? null;
         $resultReason = $row['result_reason'] ?? null;
+        $drawOfferBy = $row['draw_offer_color'] ?? null;
 
         return new self(
             id: (string) $row['id'],
@@ -51,6 +53,7 @@ final class GameMatch
                 : new DateTimeImmutable((string) $turnStartedAt, new DateTimeZone('UTC')),
             resultWinner: $resultWinner === null ? null : Color::from((string) $resultWinner),
             resultReason: $resultReason === null ? null : GameResultReason::from((string) $resultReason),
+            drawOfferBy: $drawOfferBy === null ? null : Color::from((string) $drawOfferBy),
         );
     }
 
@@ -71,7 +74,7 @@ final class GameMatch
      */
     public function withMovePlayed(Position $after): self
     {
-        return $this->with(status: MatchStatus::Active, fen: $after->fen);
+        return $this->with(status: MatchStatus::Active, fen: $after->fen, clearDrawOffer: true);
     }
 
     public function withClock(
@@ -112,6 +115,7 @@ final class GameMatch
             resultWinner: $winner,
             resultReason: $reason,
             clearTurnStartedAt: true,
+            clearDrawOffer: true,
         );
     }
 
@@ -126,6 +130,7 @@ final class GameMatch
             return match ($this->resultReason) {
                 GameResultReason::Stalemate => 'Draw by stalemate',
                 GameResultReason::InsufficientMaterial => 'Draw by insufficient material',
+                GameResultReason::Agreement => 'Draw by agreement',
                 default => 'Draw',
             };
         }
@@ -135,6 +140,7 @@ final class GameMatch
         return match ($this->resultReason) {
             GameResultReason::Checkmate => "{$side} wins by checkmate",
             GameResultReason::Timeout => "{$side} wins on time",
+            GameResultReason::Resign => "{$side} wins by resignation",
             default => "{$side} wins",
         };
     }
@@ -170,6 +176,16 @@ final class GameMatch
         return $this->status === MatchStatus::Ready || $this->status === MatchStatus::Active;
     }
 
+    public function withDrawOffered(Color $by): self
+    {
+        return $this->with(drawOfferBy: $by);
+    }
+
+    public function withoutDrawOffer(): self
+    {
+        return $this->with(clearDrawOffer: true);
+    }
+
     private function with(
         ?MatchStatus $status = null,
         ?string $fen = null,
@@ -179,7 +195,9 @@ final class GameMatch
         ?DateTimeImmutable $turnStartedAt = null,
         ?Color $resultWinner = null,
         ?GameResultReason $resultReason = null,
+        ?Color $drawOfferBy = null,
         bool $clearTurnStartedAt = false,
+        bool $clearDrawOffer = false,
     ): self {
         return new self(
             id: $this->id,
@@ -195,6 +213,7 @@ final class GameMatch
             turnStartedAt: $clearTurnStartedAt ? null : ($turnStartedAt ?? $this->turnStartedAt),
             resultWinner: $resultWinner ?? $this->resultWinner,
             resultReason: $resultReason ?? $this->resultReason,
+            drawOfferBy: $clearDrawOffer ? null : ($drawOfferBy ?? $this->drawOfferBy),
         );
     }
 }

@@ -137,12 +137,14 @@ export function startBoard(game) {
             || state.moveCount !== payload.moveCount
             || state.status !== payload.status
             || state.you.canMove !== payload.you.canMove
+            || state.drawOffer?.by !== payload.drawOffer?.by
             || clocksChanged(state?.clocks, payload.clocks);
 
         state = payload;
         pliesDrawn = payload.moveCount;
         drawTurn(payload);
         drawClocks(payload);
+        drawActions(payload);
 
         if (payload.status === 'finished') {
             drawResult(payload);
@@ -240,14 +242,18 @@ export function startBoard(game) {
                 ? 'Draw by stalemate'
                 : reason === 'insufficient_material'
                     ? 'Draw by insufficient material'
-                    : 'Draw';
+                    : reason === 'agreement'
+                        ? 'Draw by agreement'
+                        : 'Draw';
         } else {
             const side = winner === 'white' ? 'White' : 'Black';
             headline = reason === 'checkmate'
                 ? `${side} wins by checkmate`
                 : reason === 'timeout'
                     ? `${side} wins on time`
-                    : `${side} wins`;
+                    : reason === 'resign'
+                        ? `${side} wins by resignation`
+                        : `${side} wins`;
         }
 
         if (resultLine) {
@@ -284,6 +290,68 @@ export function startBoard(game) {
             ? `${current.turn === 'white' ? 'White' : 'Black'} to move.`
             : 'Waiting for your opponent.';
     }
+
+    function drawActions(current) {
+        const actions = game.querySelector('[data-actions]');
+        if (actions === null) {
+            return;
+        }
+
+        const offerBy = current.drawOffer?.by ?? null;
+        const theyOffered = offerBy !== null && offerBy !== ownColor;
+        const inPlay = current.status === 'ready' || current.status === 'active';
+
+        actions.hidden = !inPlay;
+        game.querySelector('[data-offer-draw]').hidden = !inPlay || offerBy !== null;
+        game.querySelector('[data-accept-draw]').hidden = !theyOffered;
+        game.querySelector('[data-decline-draw]').hidden = !theyOffered;
+        game.querySelector('[data-resign]').hidden = !inPlay;
+
+        const status = game.querySelector('[data-draw-status]');
+        if (offerBy === ownColor) {
+            status.hidden = false;
+            status.textContent = 'Draw offered — waiting for your opponent.';
+        } else if (theyOffered) {
+            status.hidden = false;
+            status.textContent = 'Your opponent offers a draw.';
+        } else {
+            status.hidden = true;
+            status.textContent = '';
+        }
+    }
+
+    async function postAction(path, body) {
+        try {
+            const response = await fetch(`/api/matches/${matchId}${path}${credentials}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const payload = await response.json();
+
+            if (!response.ok) {
+                showError(payload.message ?? 'That action was not accepted.');
+                return;
+            }
+
+            apply(payload);
+        } catch {
+            showError('That action could not be sent. Check your connection.');
+        }
+    }
+
+    game.querySelector('[data-resign]')?.addEventListener('click', () => {
+        postAction('/resign', {});
+    });
+    game.querySelector('[data-offer-draw]')?.addEventListener('click', () => {
+        postAction('/draw', { action: 'offer' });
+    });
+    game.querySelector('[data-accept-draw]')?.addEventListener('click', () => {
+        postAction('/draw', { action: 'accept' });
+    });
+    game.querySelector('[data-decline-draw]')?.addEventListener('click', () => {
+        postAction('/draw', { action: 'decline' });
+    });
 
     function showError(message) {
         errorLine.textContent = message;

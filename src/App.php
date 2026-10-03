@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Chess;
 
 use Chess\Game\Challenges;
+use Chess\Game\Draws;
 use Chess\Game\MatchLinkFactory;
 use Chess\Game\MatchClock;
 use Chess\Game\MatchRepository;
 use Chess\Game\MatchTiming;
 use Chess\Game\Moves;
+use Chess\Game\Resignations;
 use Chess\Game\Seating;
 use Chess\Http\ChallengeController;
 use Chess\Http\MatchController;
@@ -41,11 +43,13 @@ final class App
         $challenges = new Challenges($matches, $tokens, $clock, $timing);
         $seating = new Seating($matches, $tokens);
         $moves = new Moves($matches, $clock, $timing);
+        $resignations = new Resignations($matches, $matchClock, $timing);
+        $draws = new Draws($matches, $matchClock, $timing);
         $linkFactory = new MatchLinkFactory($config->baseUrlOverride());
         $view = new View($projectRoot . '/templates');
 
         $challengeController = new ChallengeController($challenges, $matchClock, $linkFactory, $view);
-        $matchController = new MatchController($challenges, $seating, $moves, $matchClock, $linkFactory, $view);
+        $matchController = new MatchController($challenges, $seating, $moves, $resignations, $draws, $matchClock, $linkFactory, $view);
 
         $router = new Router();
         $router->add('GET', '/', $challengeController->showCreateForm(...));
@@ -54,6 +58,8 @@ final class App
         $router->add('GET', '/game/{matchId}', $matchController->show(...));
         $router->add('GET', '/api/matches/{matchId}', $matchController->state(...));
         $router->add('POST', '/api/matches/{matchId}/moves', $matchController->submitMove(...));
+        $router->add('POST', '/api/matches/{matchId}/resign', $matchController->resign(...));
+        $router->add('POST', '/api/matches/{matchId}/draw', $matchController->draw(...));
 
         return new self($router, $view);
     }
