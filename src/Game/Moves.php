@@ -15,6 +15,7 @@ final class Moves
     public function __construct(
         private readonly MatchRepository $matches,
         private readonly Clock $clock,
+        private readonly MatchTiming $timing,
     ) {
     }
 
@@ -30,6 +31,19 @@ final class Moves
         $color = $match->colorFor($role);
         if ($color === null) {
             throw MoveRejected::because(MoveRejection::NotAPlayer);
+        }
+
+        // Timeouts commit in their own transaction so a rejected move cannot
+        // roll back a flag that already happened.
+        $current = $this->matches->snapshot(
+            $match->id,
+            fn (MatchSnapshot $snapshot): MatchSnapshot => $this->timing->refresh($snapshot),
+        ) ?? throw MoveRejected::because(MoveRejection::MatchNotFound);
+
+        if (!$current->match->allowsMoves()) {
+            throw MoveRejected::because($current->match->status === MatchStatus::Finished
+                ? MoveRejection::MatchFinished
+                : MoveRejection::MatchNotStarted);
         }
 
         return $this->matches->transactionally(
@@ -66,8 +80,8 @@ final class Moves
             $this->clock->now(),
         );
 
-        $moved = $match->withMovePlayed($played->after);
-        $this->matches->updatePosition($moved);
+        $moved = $this->timing->afterMove($match, $color, $played->after);
+        $this->matches->updateAfterMove($moved);
 
         // Read back inside the same transaction, so the mover's own response is
         // as self-consistent as any poll's.

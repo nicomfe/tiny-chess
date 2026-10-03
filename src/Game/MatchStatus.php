@@ -19,4 +19,10 @@ enum MatchStatus: string
     case Ready = 'ready';
     case Active = 'active';
     case Finished = 'finished';
+
+    /** True while stored banks and `turn_started_at` drive a live countdown. */
+    public function clocksMayRun(): bool
+    {
+        return $this === self::Active;
+    }
 }

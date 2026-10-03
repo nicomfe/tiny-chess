@@ -14,6 +14,7 @@ final class Challenges
         private readonly MatchRepository $matches,
         private readonly Tokens $tokens,
         private readonly Clock $clock,
+        private readonly MatchTiming $timing,
     ) {
     }
 
@@ -44,6 +45,6 @@ final class Challenges
     /** The match together with its plies, consistent with one another. */
     public function snapshot(string $matchId): ?MatchSnapshot
     {
-        return $this->matches->snapshot($matchId);
+        return $this->matches->snapshot($matchId, fn (MatchSnapshot $snapshot): MatchSnapshot => $this->timing->refresh($snapshot));
     }
 }

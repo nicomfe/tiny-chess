@@ -19,6 +19,11 @@ final class GameMatch
         public readonly string $creatorTokenHash,
         public readonly DateTimeImmutable $createdAt,
         public readonly ?string $joinerTokenHash = null,
+        public readonly ?int $whiteRemainingMs = null,
+        public readonly ?int $blackRemainingMs = null,
+        public readonly ?DateTimeImmutable $turnStartedAt = null,
+        public readonly ?Color $resultWinner = null,
+        public readonly ?GameResultReason $resultReason = null,
     ) {
     }
 
@@ -26,6 +31,9 @@ final class GameMatch
     public static function fromRow(array $row): self
     {
         $joinerTokenHash = $row['joiner_token_hash'] ?? null;
+        $turnStartedAt = $row['turn_started_at'] ?? null;
+        $resultWinner = $row['result_winner_color'] ?? null;
+        $resultReason = $row['result_reason'] ?? null;
 
         return new self(
             id: (string) $row['id'],
@@ -36,6 +44,13 @@ final class GameMatch
             creatorTokenHash: (string) $row['creator_token_hash'],
             createdAt: new DateTimeImmutable((string) $row['created_at'], new DateTimeZone('UTC')),
             joinerTokenHash: $joinerTokenHash === null ? null : (string) $joinerTokenHash,
+            whiteRemainingMs: ($row['white_remaining_ms'] ?? null) !== null ? (int) $row['white_remaining_ms'] : null,
+            blackRemainingMs: ($row['black_remaining_ms'] ?? null) !== null ? (int) $row['black_remaining_ms'] : null,
+            turnStartedAt: $turnStartedAt === null
+                ? null
+                : new DateTimeImmutable((string) $turnStartedAt, new DateTimeZone('UTC')),
+            resultWinner: $resultWinner === null ? null : Color::from((string) $resultWinner),
+            resultReason: $resultReason === null ? null : GameResultReason::from((string) $resultReason),
         );
     }
 
@@ -57,6 +72,33 @@ final class GameMatch
     public function withMovePlayed(Position $after): self
     {
         return $this->with(status: MatchStatus::Active, fen: $after->fen);
+    }
+
+    public function withClock(
+        int $whiteRemainingMs,
+        int $blackRemainingMs,
+        DateTimeImmutable $turnStartedAt,
+    ): self {
+        return $this->with(
+            whiteRemainingMs: $whiteRemainingMs,
+            blackRemainingMs: $blackRemainingMs,
+            turnStartedAt: $turnStartedAt,
+        );
+    }
+
+    public function withFinishedOnTimeout(
+        int $whiteRemainingMs,
+        int $blackRemainingMs,
+        Color $winner,
+    ): self {
+        return $this->with(
+            status: MatchStatus::Finished,
+            whiteRemainingMs: $whiteRemainingMs,
+            blackRemainingMs: $blackRemainingMs,
+            resultWinner: $winner,
+            resultReason: GameResultReason::Timeout,
+            clearTurnStartedAt: true,
+        );
     }
 
     public function position(): Position
@@ -94,6 +136,12 @@ final class GameMatch
         ?MatchStatus $status = null,
         ?string $fen = null,
         ?string $joinerTokenHash = null,
+        ?int $whiteRemainingMs = null,
+        ?int $blackRemainingMs = null,
+        ?DateTimeImmutable $turnStartedAt = null,
+        ?Color $resultWinner = null,
+        ?GameResultReason $resultReason = null,
+        bool $clearTurnStartedAt = false,
     ): self {
         return new self(
             id: $this->id,
@@ -104,6 +152,11 @@ final class GameMatch
             creatorTokenHash: $this->creatorTokenHash,
             createdAt: $this->createdAt,
             joinerTokenHash: $joinerTokenHash ?? $this->joinerTokenHash,
+            whiteRemainingMs: $whiteRemainingMs ?? $this->whiteRemainingMs,
+            blackRemainingMs: $blackRemainingMs ?? $this->blackRemainingMs,
+            turnStartedAt: $clearTurnStartedAt ? null : ($turnStartedAt ?? $this->turnStartedAt),
+            resultWinner: $resultWinner ?? $this->resultWinner,
+            resultReason: $resultReason ?? $this->resultReason,
         );
     }
 }

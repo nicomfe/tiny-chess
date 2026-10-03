@@ -17,13 +17,14 @@ final class PublicMatchState
      * @param int $cursor the newest move number the caller already has
      * @return array<string, mixed>
      */
-    public static function forRole(MatchSnapshot $snapshot, Role $role, int $cursor = 0): array
+    public static function forRole(MatchSnapshot $snapshot, Role $role, MatchClock $clock, int $cursor = 0): array
     {
         $match = $snapshot->match;
         $moves = $snapshot->moves;
         $position = $match->position();
         $color = $match->colorFor($role);
         $canMove = $color !== null && $match->allowsMoves() && $position->sideToMove() === $color;
+        $clocks = $clock->display($match, $position->sideToMove());
 
         return [
             'matchId' => $match->id,
@@ -54,10 +55,26 @@ final class PublicMatchState
             // Only the side to move is told where its pieces may go, which is
             // also what leaves a spectator's board with nothing to drag.
             'dests' => $canMove ? $position->legalDestinations() : null,
-            // Filled in by the clock, endings and draw tickets.
-            'clocks' => null,
-            'result' => null,
+            'clocks' => [
+                'white' => $clocks['white'],
+                'black' => $clocks['black'],
+                'running' => $clocks['running'],
+            ],
+            'result' => self::result($match),
             'drawOffer' => null,
+        ];
+    }
+
+    /** @return array{winner: string, reason: string}|null */
+    private static function result(GameMatch $match): ?array
+    {
+        if ($match->status !== MatchStatus::Finished || $match->resultWinner === null || $match->resultReason === null) {
+            return null;
+        }
+
+        return [
+            'winner' => $match->resultWinner->value,
+            'reason' => $match->resultReason->value,
         ];
     }
 }

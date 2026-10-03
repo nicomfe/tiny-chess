@@ -8,6 +8,7 @@ use Chess\Game\Challenges;
 use Chess\Game\GameMatch;
 use Chess\Game\MatchLinkFactory;
 use Chess\Game\MatchSnapshot;
+use Chess\Game\MatchClock;
 use Chess\Game\MoveRejected;
 use Chess\Game\MoveRejection;
 use Chess\Game\Moves;
@@ -24,6 +25,7 @@ final class MatchController
         private readonly Challenges $challenges,
         private readonly Seating $seating,
         private readonly Moves $moves,
+        private readonly MatchClock $matchClock,
         private readonly MatchLinkFactory $linkFactory,
         private readonly View $view,
     ) {
@@ -113,6 +115,7 @@ final class MatchController
         return Response::json(PublicMatchState::forRole(
             $snapshot,
             $role,
+            $this->matchClock,
             max(0, (int) ($request->queryParam('since') ?? 0)),
         ));
     }

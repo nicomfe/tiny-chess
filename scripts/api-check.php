@@ -248,6 +248,69 @@ function is_null_field(?array $payload, string $field): bool
     return is_array($payload) && array_key_exists($field, $payload) && $payload[$field] === null;
 }
 
+/** Five-minute control in milliseconds, matching `create_challenge()`. */
+const FULL_BANK_MS = 300_000;
+
+/** @param array<string, mixed>|null $state */
+function clocks_are_idle_at_full(?array $state): bool
+{
+    $clocks = $state['clocks'] ?? null;
+
+    return is_array($clocks)
+        && (int) ($clocks['white'] ?? 0) === FULL_BANK_MS
+        && (int) ($clocks['black'] ?? 0) === FULL_BANK_MS
+        && array_key_exists('running', $clocks)
+        && $clocks['running'] === null;
+}
+
+function db(): ?PDO
+{
+    static $pdo = null;
+    static $attempted = false;
+
+    if ($attempted) {
+        return $pdo;
+    }
+
+    $attempted = true;
+
+    try {
+        $pdo = new PDO(
+            'mysql:host=127.0.0.1;port=3307;dbname=chess;charset=utf8mb4',
+            'chess',
+            'chess',
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            ],
+        );
+    } catch (PDOException) {
+        $pdo = null;
+    }
+
+    return $pdo;
+}
+
+/** Forces the side to move to have no time left, for timeout checks. */
+function force_flag(string $matchId, string $side): bool
+{
+    $pdo = db();
+    if ($pdo === null) {
+        return false;
+    }
+
+    $column = $side === 'white' ? 'white_remaining_ms' : 'black_remaining_ms';
+    $statement = $pdo->prepare(
+        "UPDATE matches
+            SET {$column} = 0,
+                turn_started_at = UTC_TIMESTAMP(3) - INTERVAL 2 SECOND
+          WHERE id = :id",
+    );
+    $statement->execute(['id' => $matchId]);
+
+    return $statement->rowCount() === 1;
+}
+
 /**
  * Fires several POSTs at the same time, so a check can see what the server does
  * when two submissions race for one turn.
@@ -364,6 +427,7 @@ check('the play page speaks to the opponent as the joiner', page_attribute($join
 $asJoiner = match_state($baseUrl, $game['matchId'], $joinerCookie);
 check('the cookie resolves to the joiner role', ($asJoiner['json']['you']['role'] ?? null) === 'joiner', $asJoiner['body']);
 check('the match is ready once both are seated', ($asJoiner['json']['status'] ?? null) === 'ready');
+check('clocks stay idle at the full bank while ready', clocks_are_idle_at_full($asJoiner['json']), $asJoiner['body']);
 
 $creatorAfterJoin = request('GET', $game['creatorUrl']);
 check('the creator page turns ready', page_attribute($creatorAfterJoin['body'], 'status') === 'ready');
@@ -457,13 +521,16 @@ check(
     ($opening['json']['fen'] ?? null) === 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1',
     (string) ($opening['json']['fen'] ?? ''),
 );
+check('clocks report the full bank after white starts the game', clocks_are_idle_at_full($opening['json']) === false, $opening['body']);
+check('black clock is running after the first move', ($opening['json']['clocks']['running'] ?? null) === 'black', $opening['body']);
 check(
-    'clock, result and draw fields are present but unused',
-    is_null_field($opening['json'], 'clocks')
-        && is_null_field($opening['json'], 'result')
-        && is_null_field($opening['json'], 'drawOffer'),
+    'both banks are still essentially full after the first move',
+    (int) ($opening['json']['clocks']['white'] ?? 0) >= FULL_BANK_MS - 1000
+        && (int) ($opening['json']['clocks']['black'] ?? 0) >= FULL_BANK_MS - 1000,
     $opening['body'],
 );
+check('result stays empty while the game is active', is_null_field($opening['json'], 'result'), $opening['body']);
+check('draw offer stays empty for now', is_null_field($opening['json'], 'drawOffer'), $opening['body']);
 
 fwrite(STDOUT, "\nThe move reaches the opponent and the spectators\n");
 $opponentView = match_state($baseUrl, $game['matchId'], $game['joinerCookie']);
@@ -535,6 +602,23 @@ check(
     (match_state($baseUrl, $race['matchId'])['json']['moveCount'] ?? null) === 1,
     match_state($baseUrl, $race['matchId'])['body'],
 );
+
+fwrite(STDOUT, "\nTimeout ends the game on the server\n");
+$timed = seated_game($baseUrl);
+$started = submit_move($baseUrl, $timed['matchId'], 'e2e4', null, $timed['creatorToken']);
+check('the timed game is active with black to move', ($started['json']['status'] ?? null) === 'active', $started['body']);
+if (force_flag($timed['matchId'], 'black')) {
+    $flagged = match_state($baseUrl, $timed['matchId'], $timed['joinerCookie']);
+    check('a poll flags black on zero time', ($flagged['json']['status'] ?? null) === 'finished', $flagged['body']);
+    check('white wins on time', ($flagged['json']['result']['winner'] ?? null) === 'white', $flagged['body']);
+    check('the result reason is timeout', ($flagged['json']['result']['reason'] ?? null) === 'timeout', $flagged['body']);
+
+    $tooLate = submit_move($baseUrl, $timed['matchId'], 'e7e5', $timed['joinerCookie']);
+    check('a move after the flag is rejected', $tooLate['status'] === 409, "got {$tooLate['status']}");
+    check('the rejection says the game is over', ($tooLate['json']['error'] ?? null) === 'match_finished', $tooLate['body']);
+} else {
+    fwrite(STDOUT, "  skip timeout checks — no local MySQL on port 3307\n");
+}
 
 fwrite(STDOUT, "\nThe board on the page\n");
 $board = seated_game($baseUrl);

@@ -19,6 +19,10 @@ export function startBoard(game) {
     const turnLine = game.querySelector('[data-turn]');
     const errorLine = game.querySelector('[data-move-error]');
     const moveList = game.querySelector('[data-move-list]');
+    const clockSides = {
+        white: game.querySelector('[data-clock="white"]'),
+        black: game.querySelector('[data-clock="black"]'),
+    };
 
     // The query string carries the creator's token, so polls and submissions
     // have to keep it to stay the creator.
@@ -130,11 +134,13 @@ export function startBoard(game) {
             || state.fen !== payload.fen
             || state.moveCount !== payload.moveCount
             || state.status !== payload.status
-            || state.you.canMove !== payload.you.canMove;
+            || state.you.canMove !== payload.you.canMove
+            || clocksChanged(state?.clocks, payload.clocks);
 
         state = payload;
         pliesDrawn = payload.moveCount;
         drawTurn(payload);
+        drawClocks(payload);
 
         if (changed) {
             // Whatever the last attempt got wrong, the position has moved on.
@@ -175,6 +181,40 @@ export function startBoard(game) {
 
             return item;
         }));
+    }
+
+    function clocksChanged(before, after) {
+        if (before === undefined || after === undefined) {
+            return before !== after;
+        }
+
+        return before.white !== after.white
+            || before.black !== after.black
+            || before.running !== after.running;
+    }
+
+    function formatClock(ms) {
+        const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+
+        return `${minutes}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    function drawClocks(current) {
+        if (!current?.clocks) {
+            return;
+        }
+
+        for (const color of ['white', 'black']) {
+            const side = clockSides[color];
+            if (side === null) {
+                continue;
+            }
+
+            side.querySelector('[data-clock-time]').textContent = formatClock(current.clocks[color]);
+            side.classList.toggle('is-running', current.clocks.running === color);
+        }
     }
 
     function drawTurn(current) {

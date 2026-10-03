@@ -61,6 +61,16 @@ $statusLine = match ($match->status) {
 
     <?php if ($match->allowsMoves()): ?>
         <section class="play">
+            <div class="clocks" data-clocks aria-live="polite">
+                <div class="clocks__side" data-clock="white">
+                    <span class="clocks__label">White</span>
+                    <span class="clocks__time" data-clock-time><?= e(sprintf('%d:00', $match->timeControl->minutes())) ?></span>
+                </div>
+                <div class="clocks__side" data-clock="black">
+                    <span class="clocks__label">Black</span>
+                    <span class="clocks__time" data-clock-time><?= e(sprintf('%d:00', $match->timeControl->minutes())) ?></span>
+                </div>
+            </div>
             <!-- The board needs scripting, so its turn line and move list are
                  left for the board to fill in rather than rendered twice. -->
             <div class="board-frame">

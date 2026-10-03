@@ -66,12 +66,18 @@ final class MatchRepository
      * Both reads happen in one transaction, so a move landing between them
      * cannot hand back a match and a move list that disagree.
      */
-    public function snapshot(string $matchId): ?MatchSnapshot
+    public function snapshot(string $matchId, ?callable $refresh = null): ?MatchSnapshot
     {
-        return $this->transactionally(function () use ($matchId): ?MatchSnapshot {
-            $match = $this->find($matchId);
+        return $this->transactionally(function () use ($matchId, $refresh): ?MatchSnapshot {
+            $match = $this->findForUpdate($matchId);
 
-            return $match === null ? null : new MatchSnapshot($match, $this->movesFor($matchId));
+            if ($match === null) {
+                return null;
+            }
+
+            $snapshot = new MatchSnapshot($match, $this->movesFor($matchId));
+
+            return $refresh === null ? $snapshot : $refresh($snapshot);
         });
     }
 
@@ -102,12 +108,46 @@ final class MatchRepository
         ]);
     }
 
-    public function updatePosition(GameMatch $match): void
+    public function updateAfterMove(GameMatch $match): void
     {
-        $statement = $this->pdo->prepare('UPDATE matches SET fen = :fen, status = :status WHERE id = :id');
+        $statement = $this->pdo->prepare(
+            'UPDATE matches
+                SET fen = :fen,
+                    status = :status,
+                    white_remaining_ms = :white_remaining_ms,
+                    black_remaining_ms = :black_remaining_ms,
+                    turn_started_at = :turn_started_at
+              WHERE id = :id',
+        );
         $statement->execute([
             'fen' => $match->fen,
             'status' => $match->status->value,
+            'white_remaining_ms' => $match->whiteRemainingMs,
+            'black_remaining_ms' => $match->blackRemainingMs,
+            'turn_started_at' => $match->turnStartedAt?->format('Y-m-d H:i:s.v'),
+            'id' => $match->id,
+        ]);
+    }
+
+    public function saveClockState(GameMatch $match): void
+    {
+        $statement = $this->pdo->prepare(
+            'UPDATE matches
+                SET status = :status,
+                    white_remaining_ms = :white_remaining_ms,
+                    black_remaining_ms = :black_remaining_ms,
+                    turn_started_at = :turn_started_at,
+                    result_winner_color = :result_winner_color,
+                    result_reason = :result_reason
+              WHERE id = :id',
+        );
+        $statement->execute([
+            'status' => $match->status->value,
+            'white_remaining_ms' => $match->whiteRemainingMs,
+            'black_remaining_ms' => $match->blackRemainingMs,
+            'turn_started_at' => $match->turnStartedAt?->format('Y-m-d H:i:s.v'),
+            'result_winner_color' => $match->resultWinner?->value,
+            'result_reason' => $match->resultReason?->value,
             'id' => $match->id,
         ]);
     }

@@ -6,7 +6,9 @@ namespace Chess;
 
 use Chess\Game\Challenges;
 use Chess\Game\MatchLinkFactory;
+use Chess\Game\MatchClock;
 use Chess\Game\MatchRepository;
+use Chess\Game\MatchTiming;
 use Chess\Game\Moves;
 use Chess\Game\Seating;
 use Chess\Http\ChallengeController;
@@ -34,14 +36,16 @@ final class App
         $tokens = new Tokens($config->appSecret());
         $clock = new Clock();
 
-        $challenges = new Challenges($matches, $tokens, $clock);
+        $matchClock = new MatchClock($clock);
+        $timing = new MatchTiming($matches, $matchClock);
+        $challenges = new Challenges($matches, $tokens, $clock, $timing);
         $seating = new Seating($matches, $tokens);
-        $moves = new Moves($matches, $clock);
+        $moves = new Moves($matches, $clock, $timing);
         $linkFactory = new MatchLinkFactory($config->baseUrlOverride());
         $view = new View($projectRoot . '/templates');
 
-        $challengeController = new ChallengeController($challenges, $linkFactory, $view);
-        $matchController = new MatchController($challenges, $seating, $moves, $linkFactory, $view);
+        $challengeController = new ChallengeController($challenges, $matchClock, $linkFactory, $view);
+        $matchController = new MatchController($challenges, $seating, $moves, $matchClock, $linkFactory, $view);
 
         $router = new Router();
         $router->add('GET', '/', $challengeController->showCreateForm(...));
