@@ -4,7 +4,7 @@
 
 **Blocked by:** Join as opponent and wait until both are seated
 
-- [ ] A match still in `waiting` one hour after creation becomes `abandoned` when state is read (poll or page load) — lazy, no cron required.
-- [ ] Opening an abandoned challenge shows a clear “challenge expired” message; the visitor knows to ask for a new link.
-- [ ] No joiner can be claimed and no moves can be played on an abandoned challenge.
-- [ ] Matches that already reached `ready`, `active`, or `finished` are not transitioned to `abandoned` by the one-hour rule.
+- [x] A match still in `waiting` one hour after creation becomes `abandoned` when state is read (poll or page load) — lazy, no cron required.
+- [x] Opening an abandoned challenge shows a clear “challenge expired” message; the visitor knows to ask for a new link.
+- [x] No joiner can be claimed and no moves can be played on an abandoned challenge.
+- [x] Matches that already reached `ready`, `active`, or `finished` are not transitioned to `abandoned` by the one-hour rule.

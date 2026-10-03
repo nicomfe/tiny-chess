@@ -11,9 +11,10 @@ use Chess\Game\Role;
 /** @var string|null $creatorUrl */
 
 $isWaiting = $match->status === MatchStatus::Waiting;
+$isAbandoned = $match->status === MatchStatus::Abandoned;
 $isFinished = $match->status === MatchStatus::Finished;
 $showsBoard = $match->allowsMoves() || $isFinished;
-$showsCreatorLinks = $role === Role::Creator && $creatorUrl !== null && !$isFinished;
+$showsCreatorLinks = $role === Role::Creator && $creatorUrl !== null && !$isFinished && !$isAbandoned;
 
 // A spectator has no color, which is both the fixed white-at-the-bottom view
 // and what tells the board to accept no input at all.
@@ -21,6 +22,7 @@ $ownColor = $match->colorFor($role);
 $orientation = $ownColor ?? Color::White;
 
 $heading = match (true) {
+    $isAbandoned => 'Challenge expired',
     $isFinished => 'Game over',
     $role === Role::Creator && $isWaiting => 'Your challenge is ready to share',
     $role === Role::Creator => 'Your opponent has joined',
@@ -36,10 +38,10 @@ $whitePlayer = match ($role) {
 
 $statusLine = match ($match->status) {
     MatchStatus::Waiting => 'Waiting for the opponent to join',
+    MatchStatus::Abandoned => 'This challenge expired',
     MatchStatus::Ready => 'Both players are seated — the game starts with white’s first move',
     MatchStatus::Active => 'Game in progress',
     MatchStatus::Finished => $match->resultHeadline(),
-    default => ucfirst($match->status->value),
 };
 ?>
 <div class="game"
@@ -60,7 +62,9 @@ $statusLine = match ($match->status) {
         <dd><?= e($statusLine) ?></dd>
     </dl>
 
-    <?php if ($isWaiting): ?>
+    <?php if ($isAbandoned): ?>
+        <p class="standby" role="status">This challenge expired. Nobody joined in time — ask for a new link.</p>
+    <?php elseif ($isWaiting): ?>
         <p class="standby" role="status">Waiting for the opponent to join. Nothing starts until they are here — the clocks stay put.</p>
     <?php endif; ?>
 
@@ -125,7 +129,7 @@ $statusLine = match ($match->status) {
         <p class="lead">You are the opponent in this game, playing
             <?= $match->creatorPlaysWhite() ? 'black' : 'white' ?>. Stay in this browser to keep your seat —
             it is what remembers you, so a refresh is fine but another browser would only be watching.</p>
-    <?php elseif ($role === Role::Spectator): ?>
+    <?php elseif ($role === Role::Spectator && !$isAbandoned): ?>
         <p class="lead">You are watching this challenge<?= $isWaiting ? '' : '. Both seats are taken, so you cannot move pieces' ?>.
             <?= $isWaiting ? 'The board appears here once play begins.' : '' ?></p>
     <?php endif; ?>

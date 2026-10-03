@@ -68,6 +68,19 @@ final class GameMatch
         return $this->with(status: MatchStatus::Ready, joinerTokenHash: $joinerTokenHash);
     }
 
+    /** Nobody joined within an hour of creation. */
+    public function withAbandoned(): self
+    {
+        return $this->with(status: MatchStatus::Abandoned);
+    }
+
+    /** Still waiting after the one-hour window, so the challenge should be dropped. */
+    public function waitingHasExpired(DateTimeImmutable $now): bool
+    {
+        return $this->status === MatchStatus::Waiting
+            && $now >= $this->createdAt->modify('+1 hour');
+    }
+
     /**
      * The state after a ply lands. Reaching here from `ready` is white's first
      * move, which is exactly what starts the game.

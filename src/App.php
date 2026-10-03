@@ -39,7 +39,7 @@ final class App
         $clock = new Clock();
 
         $matchClock = new MatchClock($clock);
-        $timing = new MatchTiming($matches, $matchClock);
+        $timing = new MatchTiming($matches, $matchClock, $clock);
         $challenges = new Challenges($matches, $tokens, $clock, $timing);
         $seating = new Seating($matches, $tokens);
         $moves = new Moves($matches, $clock, $timing);

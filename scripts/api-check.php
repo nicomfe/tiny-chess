@@ -344,6 +344,28 @@ function force_active_position(string $matchId, string $fen): bool
     return $statement->rowCount() === 1;
 }
 
+/**
+ * Ages a match's creation time so waiting expiry can be exercised without
+ * sitting through a real hour.
+ */
+function age_match(string $matchId, int $minutesAgo): bool
+{
+    $pdo = db();
+    if ($pdo === null) {
+        return false;
+    }
+
+    $minutesAgo = max(0, $minutesAgo);
+    $statement = $pdo->prepare(
+        "UPDATE matches
+            SET created_at = UTC_TIMESTAMP(3) - INTERVAL {$minutesAgo} MINUTE
+          WHERE id = :id",
+    );
+    $statement->execute(['id' => $matchId]);
+
+    return $statement->rowCount() === 1;
+}
+
 /** Forces the side to move to have no time left, for timeout checks. */
 function force_flag(string $matchId, string $side): bool
 {
@@ -889,6 +911,100 @@ check('an agreed-draw play link still serves the board', page_attribute($drawRep
 check('the agreed-draw page names the result', str_contains($drawReplay['body'], 'agreement'), $drawReplay['body']);
 $creatorDrawReplay = request('GET', $drawn['creatorUrl']);
 check('the creator replay page names the agreed draw', str_contains($creatorDrawReplay['body'], 'agreement'), $creatorDrawReplay['body']);
+
+fwrite(STDOUT, "\nUnjoined challenges expire after an hour\n");
+$stale = create_challenge($baseUrl);
+if (age_match($stale['matchId'], 61)) {
+    $expired = match_state($baseUrl, $stale['matchId'], null, $stale['creatorToken']);
+    check('a poll after one hour abandons a waiting challenge', ($expired['json']['status'] ?? null) === 'abandoned', $expired['body']);
+} else {
+    fwrite(STDOUT, "  skip expiry poll checks — no local MySQL on port 3307\n");
+}
+
+$pageExpiry = create_challenge($baseUrl);
+if (age_match($pageExpiry['matchId'], 61)) {
+    $expiredCreatorPage = request('GET', $pageExpiry['creatorUrl']);
+    check(
+        'a page load after one hour abandons a waiting challenge',
+        page_attribute($expiredCreatorPage['body'], 'status') === 'abandoned',
+        (string) page_attribute($expiredCreatorPage['body'], 'status'),
+    );
+    check(
+        'the expired page tells the visitor the challenge expired',
+        stripos($expiredCreatorPage['body'], 'challenge expired') !== false,
+        $expiredCreatorPage['body'],
+    );
+    check('the expired page has no board', !str_contains($expiredCreatorPage['body'], 'data-board'));
+
+    $expiredPlayPage = request('GET', $pageExpiry['playUrl']);
+    check(
+        'no joiner is claimed on an abandoned challenge',
+        set_cookie_header($expiredPlayPage['headers'], 'joiner') === null,
+        implode(' | ', $expiredPlayPage['headers']),
+    );
+    check(
+        'the abandoned play page says the challenge expired',
+        stripos($expiredPlayPage['body'], 'challenge expired') !== false,
+        $expiredPlayPage['body'],
+    );
+    check('the abandoned play page has no board', !str_contains($expiredPlayPage['body'], 'data-board'));
+    check(
+        'the abandoned play page does not say seats are taken',
+        stripos($expiredPlayPage['body'], 'both seats are taken') === false,
+        $expiredPlayPage['body'],
+    );
+    check(
+        'opening the play link after expiry leaves the match abandoned',
+        (match_state($baseUrl, $pageExpiry['matchId'])['json']['status'] ?? null) === 'abandoned',
+    );
+
+    $tooLateMove = submit_move($baseUrl, $pageExpiry['matchId'], 'e2e4', null, $pageExpiry['creatorToken']);
+    check('a move on an abandoned challenge is refused', $tooLateMove['status'] === 409, "got {$tooLateMove['status']}");
+} else {
+    fwrite(STDOUT, "  skip expiry page checks — no local MySQL on port 3307\n");
+}
+
+$stillOpen = create_challenge($baseUrl);
+if (age_match($stillOpen['matchId'], 59)) {
+    check(
+        'a waiting challenge under an hour stays waiting',
+        (match_state($baseUrl, $stillOpen['matchId'])['json']['status'] ?? null) === 'waiting',
+    );
+} else {
+    fwrite(STDOUT, "  skip under-an-hour expiry check — no local MySQL on port 3307\n");
+}
+
+$seatedPastHour = seated_game($baseUrl);
+if (age_match($seatedPastHour['matchId'], 61)) {
+    check(
+        'a ready match is not abandoned after an hour',
+        (match_state($baseUrl, $seatedPastHour['matchId'])['json']['status'] ?? null) === 'ready',
+    );
+} else {
+    fwrite(STDOUT, "  skip ready-not-expired check — no local MySQL on port 3307\n");
+}
+
+$activePastHour = seated_game($baseUrl);
+play_line($baseUrl, $activePastHour, ['e2e4']);
+if (age_match($activePastHour['matchId'], 61)) {
+    check(
+        'an active match is not abandoned after an hour',
+        (match_state($baseUrl, $activePastHour['matchId'])['json']['status'] ?? null) === 'active',
+    );
+} else {
+    fwrite(STDOUT, "  skip active-not-expired check — no local MySQL on port 3307\n");
+}
+
+$finishedPastHour = seated_game($baseUrl);
+resign($baseUrl, $finishedPastHour['matchId'], null, $finishedPastHour['creatorToken']);
+if (age_match($finishedPastHour['matchId'], 61)) {
+    check(
+        'a finished match is not abandoned after an hour',
+        (match_state($baseUrl, $finishedPastHour['matchId'])['json']['status'] ?? null) === 'finished',
+    );
+} else {
+    fwrite(STDOUT, "  skip finished-not-expired check — no local MySQL on port 3307\n");
+}
 
 check('reading the resign endpoint is rejected', request('GET', $baseUrl . '/api/matches/' . $drawn['matchId'] . '/resign')['status'] === 405);
 check('reading the draw endpoint is rejected', request('GET', $baseUrl . '/api/matches/' . $drawn['matchId'] . '/draw')['status'] === 405);

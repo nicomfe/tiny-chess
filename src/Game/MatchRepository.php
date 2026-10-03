@@ -160,6 +160,26 @@ final class MatchRepository
         ]);
     }
 
+    /**
+     * Marks a challenge abandoned only while it is still waiting and empty, so
+     * a joiner who sat down in the same moment is not overwritten.
+     */
+    public function abandonIfStillWaiting(string $matchId): bool
+    {
+        $statement = $this->pdo->prepare(
+            'UPDATE matches
+                SET status = :abandoned
+              WHERE id = :id AND status = :waiting AND joiner_token_hash IS NULL',
+        );
+        $statement->execute([
+            'abandoned' => MatchStatus::Abandoned->value,
+            'id' => $matchId,
+            'waiting' => MatchStatus::Waiting->value,
+        ]);
+
+        return $statement->rowCount() === 1;
+    }
+
     public function saveDrawOffer(GameMatch $match): void
     {
         $statement = $this->pdo->prepare(

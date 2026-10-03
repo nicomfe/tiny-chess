@@ -39,7 +39,12 @@ final class Challenges
 
     public function find(string $matchId): ?GameMatch
     {
-        return $this->matches->find($matchId);
+        $match = $this->matches->find($matchId);
+        if ($match === null) {
+            return null;
+        }
+
+        return $this->timing->expireWaiting($match);
     }
 
     /** The match together with its plies, consistent with one another. */

@@ -4,23 +4,41 @@ declare(strict_types=1);
 
 namespace Chess\Game;
 
+use Chess\Clock;
+
 /**
- * Applies clock rules on reads and after plies. Timeouts are persisted when
- * detected so every client sees the same finished result.
+ * Applies clock rules and waiting expiry on reads and after plies. Timeouts
+ * and abandoned challenges are persisted when detected so every client sees
+ * the same result.
  */
 final class MatchTiming
 {
     public function __construct(
         private readonly MatchRepository $matches,
         private readonly MatchClock $clock,
+        private readonly Clock $time,
     ) {
     }
 
     public function refresh(MatchSnapshot $snapshot): MatchSnapshot
     {
-        $timed = $this->applyTimeoutIfNeeded($snapshot->match);
+        $current = $this->applyTimeoutIfNeeded($this->expireWaiting($snapshot->match));
 
-        return $timed === $snapshot->match ? $snapshot : new MatchSnapshot($timed, $snapshot->moves);
+        return $current === $snapshot->match ? $snapshot : new MatchSnapshot($current, $snapshot->moves);
+    }
+
+    /** Page load and other unlocked reads only expire waiting challenges. */
+    public function expireWaiting(GameMatch $match): GameMatch
+    {
+        if (!$match->waitingHasExpired($this->time->now())) {
+            return $match;
+        }
+
+        if ($this->matches->abandonIfStillWaiting($match->id)) {
+            return $match->withAbandoned();
+        }
+
+        return $this->matches->find($match->id) ?? $match;
     }
 
     public function afterMove(GameMatch $match, Color $mover, Position $after): GameMatch
