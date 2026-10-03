@@ -291,6 +291,33 @@ function db(): ?PDO
     return $pdo;
 }
 
+/**
+ * Puts a seated match into an active position, for endings that are awkward to
+ * reach from the starting array in a short line.
+ */
+function force_active_position(string $matchId, string $fen): bool
+{
+    $pdo = db();
+    if ($pdo === null) {
+        return false;
+    }
+
+    $statement = $pdo->prepare(
+        "UPDATE matches
+            SET fen = :fen,
+                status = 'active',
+                white_remaining_ms = 300000,
+                black_remaining_ms = 300000,
+                turn_started_at = UTC_TIMESTAMP(3),
+                result_winner_color = NULL,
+                result_reason = NULL
+          WHERE id = :id",
+    );
+    $statement->execute(['fen' => $fen, 'id' => $matchId]);
+
+    return $statement->rowCount() === 1;
+}
+
 /** Forces the side to move to have no time left, for timeout checks. */
 function force_flag(string $matchId, string $side): bool
 {
@@ -602,6 +629,64 @@ check(
     (match_state($baseUrl, $race['matchId'])['json']['moveCount'] ?? null) === 1,
     match_state($baseUrl, $race['matchId'])['body'],
 );
+
+fwrite(STDOUT, "\nCheckmate ends the game automatically\n");
+$mate = seated_game($baseUrl);
+check('scholar’s mate line is playable', play_line($baseUrl, $mate, ['e2e4', 'e7e5', 'f1c4', 'b8c6', 'd1h5', 'g8f6']));
+$checkmate = submit_move($baseUrl, $mate['matchId'], 'h5f7', null, $mate['creatorToken']);
+check('delivering checkmate is accepted', $checkmate['status'] === 200, $checkmate['body']);
+check('the match is finished', ($checkmate['json']['status'] ?? null) === 'finished', $checkmate['body']);
+check('white wins by checkmate', ($checkmate['json']['result']['winner'] ?? null) === 'white', $checkmate['body']);
+check('the result reason is checkmate', ($checkmate['json']['result']['reason'] ?? null) === 'checkmate', $checkmate['body']);
+check('neither player may move after mate', ($checkmate['json']['you']['canMove'] ?? null) === false, $checkmate['body']);
+
+$tooLateMate = submit_move($baseUrl, $mate['matchId'], 'e7e5', $mate['joinerCookie']);
+check('a move after checkmate is rejected', $tooLateMate['status'] === 409, "got {$tooLateMate['status']}");
+check('the mate rejection says the game is over', ($tooLateMate['json']['error'] ?? null) === 'match_finished', $tooLateMate['body']);
+
+$spectatorReplay = match_state($baseUrl, $mate['matchId']);
+check('spectators see the finished result', ($spectatorReplay['json']['result']['reason'] ?? null) === 'checkmate', $spectatorReplay['body']);
+check('spectators still cannot move', ($spectatorReplay['json']['you']['canMove'] ?? null) === false, $spectatorReplay['body']);
+check('the final position is frozen', ($spectatorReplay['json']['moveCount'] ?? null) === 7, $spectatorReplay['body']);
+
+$replayPage = request('GET', $mate['playUrl']);
+check('a finished play link still serves the board', page_attribute($replayPage['body'], 'fen') !== null, $replayPage['body']);
+check('the finished page names the result', str_contains($replayPage['body'], 'checkmate'), $replayPage['body']);
+check('the finished page is read-only for spectators', page_attribute($replayPage['body'], 'color') === '', $replayPage['body']);
+
+fwrite(STDOUT, "\nFool’s mate ends with black winning\n");
+$fools = seated_game($baseUrl);
+check('fool’s mate line is playable', play_line($baseUrl, $fools, ['f2f3', 'e7e5', 'g2g4']));
+$fastMate = submit_move($baseUrl, $fools['matchId'], 'd8h4', $fools['joinerCookie']);
+check('black’s checkmate is accepted', $fastMate['status'] === 200, $fastMate['body']);
+check('black wins', ($fastMate['json']['result']['winner'] ?? null) === 'black', $fastMate['body']);
+
+fwrite(STDOUT, "\nStalemate and insufficient material end as draws\n");
+$stale = seated_game($baseUrl);
+if (force_active_position($stale['matchId'], '7k/8/6K1/8/8/8/8/7R w - - 0 1')) {
+    $stalemate = submit_move($baseUrl, $stale['matchId'], 'h1h8', null, $stale['creatorToken']);
+    check('delivering stalemate is accepted', $stalemate['status'] === 200, $stalemate['body']);
+    check('stalemate finishes the match', ($stalemate['json']['status'] ?? null) === 'finished', $stalemate['body']);
+    check('stalemate is a draw', is_null_field($stalemate['json']['result'] ?? null, 'winner'), $stalemate['body']);
+    check('the result reason is stalemate', ($stalemate['json']['result']['reason'] ?? null) === 'stalemate', $stalemate['body']);
+} else {
+    fwrite(STDOUT, "  skip stalemate checks — no local MySQL on port 3307\n");
+}
+
+$material = seated_game($baseUrl);
+if (force_active_position($material['matchId'], '4k3/8/8/8/8/8/8/4K3 w - - 0 1')) {
+    $bareKings = submit_move($baseUrl, $material['matchId'], 'e1e2', null, $material['creatorToken']);
+    check('king moves with bare kings are accepted', $bareKings['status'] === 200, $bareKings['body']);
+    check('insufficient material finishes the match', ($bareKings['json']['status'] ?? null) === 'finished', $bareKings['body']);
+    check('insufficient material is a draw', is_null_field($bareKings['json']['result'] ?? null, 'winner'), $bareKings['body']);
+    check(
+        'the result reason is insufficient material',
+        ($bareKings['json']['result']['reason'] ?? null) === 'insufficient_material',
+        $bareKings['body'],
+    );
+} else {
+    fwrite(STDOUT, "  skip insufficient-material checks — no local MySQL on port 3307\n");
+}
 
 fwrite(STDOUT, "\nTimeout ends the game on the server\n");
 $timed = seated_game($baseUrl);

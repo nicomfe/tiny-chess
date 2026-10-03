@@ -63,6 +63,29 @@ final class Position
         );
     }
 
+    /**
+     * Whether the side that has the move here is mated, stalemated, or only
+     * insufficient material remains — the endings this app ends automatically.
+     */
+    public function termination(): ?GameTermination
+    {
+        $engine = $this->engine();
+
+        if ($engine->inCheckmate()) {
+            return new GameTermination($this->sideToMove()->opposite(), GameResultReason::Checkmate);
+        }
+
+        if ($engine->inStalemate()) {
+            return new GameTermination(null, GameResultReason::Stalemate);
+        }
+
+        if ($engine->insufficientMaterial()) {
+            return new GameTermination(null, GameResultReason::InsufficientMaterial);
+        }
+
+        return null;
+    }
+
     /** Null when the move is not legal here, which includes naming the wrong promotion. */
     public function play(UciMove $move): ?PlayedMove
     {

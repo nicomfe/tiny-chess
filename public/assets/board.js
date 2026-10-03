@@ -17,7 +17,9 @@ export function startBoard(game) {
     const matchId = game.dataset.matchId;
     const ownColor = game.dataset.color || null;
     const turnLine = game.querySelector('[data-turn]');
+    const resultLine = game.querySelector('[data-result]');
     const errorLine = game.querySelector('[data-move-error]');
+    const replay = game.dataset.status === 'finished';
     const moveList = game.querySelector('[data-move-list]');
     const clockSides = {
         white: game.querySelector('[data-clock="white"]'),
@@ -34,7 +36,7 @@ export function startBoard(game) {
     const ground = Chessground(game.querySelector('[data-board]'), {
         fen: game.dataset.fen,
         orientation: game.dataset.orientation,
-        viewOnly: ownColor === null,
+        viewOnly: replay || ownColor === null,
         coordinates: true,
         highlight: { lastMove: true, check: true },
         draggable: { showGhost: true },
@@ -142,11 +144,19 @@ export function startBoard(game) {
         drawTurn(payload);
         drawClocks(payload);
 
+        if (payload.status === 'finished') {
+            drawResult(payload);
+        }
+
         if (changed) {
             // Whatever the last attempt got wrong, the position has moved on.
             showError('');
             draw(payload);
             drawMoveList();
+        }
+
+        if (payload.status === 'finished' && !replay) {
+            window.location.reload();
         }
     }
 
@@ -217,7 +227,44 @@ export function startBoard(game) {
         }
     }
 
+    function drawResult(current) {
+        if (!current?.result) {
+            return;
+        }
+
+        const { winner, reason } = current.result;
+        let headline;
+        if (winner === null) {
+            headline = reason === 'stalemate'
+                ? 'Draw by stalemate'
+                : reason === 'insufficient_material'
+                    ? 'Draw by insufficient material'
+                    : 'Draw';
+        } else {
+            const side = winner === 'white' ? 'White' : 'Black';
+            headline = reason === 'checkmate'
+                ? `${side} wins by checkmate`
+                : reason === 'timeout'
+                    ? `${side} wins on time`
+                    : `${side} wins`;
+        }
+
+        if (resultLine) {
+            resultLine.textContent = headline;
+        }
+
+        if (turnLine) {
+            turnLine.textContent = headline;
+        }
+    }
+
     function drawTurn(current) {
+        if (current.status === 'finished') {
+            drawResult(current);
+
+            return;
+        }
+
         if (current.status === 'ready') {
             turnLine.textContent = ownColor === 'white'
                 ? 'Your move — the game and the clocks start when you play it.'
@@ -252,14 +299,10 @@ export function startBoard(game) {
     // Polling starts straight away, so a player whose turn it is does not have
     // to wait a second before their pieces will move.
     followState(stateUrl, (payload) => {
-        // Anything past `active` is an ending the server renders, so hand the
-        // page back to it rather than guessing here.
-        if (payload.status !== 'ready' && payload.status !== 'active') {
-            window.location.reload();
+        apply(payload);
 
+        if (replay || payload.status === 'finished') {
             return STOP;
         }
-
-        apply(payload);
     });
 }

@@ -25,7 +25,19 @@ final class MatchTiming
 
     public function afterMove(GameMatch $match, Color $mover, Position $after): GameMatch
     {
-        return $this->clock->afterAcceptedMove($match, $mover, $after);
+        $updated = $this->clock->afterAcceptedMove($match, $mover, $after);
+        $termination = $after->termination();
+
+        if ($termination === null) {
+            return $updated;
+        }
+
+        return $updated->withFinished(
+            whiteRemainingMs: $updated->whiteRemainingMs ?? $match->timeControl->value * 1000,
+            blackRemainingMs: $updated->blackRemainingMs ?? $match->timeControl->value * 1000,
+            winner: $termination->winner,
+            reason: $termination->reason,
+        );
     }
 
     private function applyTimeoutIfNeeded(GameMatch $match): GameMatch

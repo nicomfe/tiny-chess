@@ -116,7 +116,9 @@ final class MatchRepository
                     status = :status,
                     white_remaining_ms = :white_remaining_ms,
                     black_remaining_ms = :black_remaining_ms,
-                    turn_started_at = :turn_started_at
+                    turn_started_at = :turn_started_at,
+                    result_winner_color = :result_winner_color,
+                    result_reason = :result_reason
               WHERE id = :id',
         );
         $statement->execute([
@@ -125,6 +127,8 @@ final class MatchRepository
             'white_remaining_ms' => $match->whiteRemainingMs,
             'black_remaining_ms' => $match->blackRemainingMs,
             'turn_started_at' => $match->turnStartedAt?->format('Y-m-d H:i:s.v'),
+            'result_winner_color' => $match->resultWinner?->value,
+            'result_reason' => $match->resultReason?->value,
             'id' => $match->id,
         ]);
     }

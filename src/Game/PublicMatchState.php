@@ -68,12 +68,12 @@ final class PublicMatchState
     /** @return array{winner: string, reason: string}|null */
     private static function result(GameMatch $match): ?array
     {
-        if ($match->status !== MatchStatus::Finished || $match->resultWinner === null || $match->resultReason === null) {
+        if ($match->status !== MatchStatus::Finished || $match->resultReason === null) {
             return null;
         }
 
         return [
-            'winner' => $match->resultWinner->value,
+            'winner' => $match->resultWinner?->value,
             'reason' => $match->resultReason->value,
         ];
     }

@@ -203,6 +203,17 @@ button:hover {
     font-weight: 600;
 }
 
+.result {
+    background: var(--panel);
+    border: 1px solid var(--panel-accent);
+    border-radius: 10px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0 0 1rem;
+    padding: 0.85rem 1rem;
+    text-align: center;
+}
+
 .turn {
     color: var(--text);
     font-weight: 600;

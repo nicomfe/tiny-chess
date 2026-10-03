@@ -11,17 +11,21 @@ use Chess\Game\Role;
 /** @var string|null $creatorUrl */
 
 $isWaiting = $match->status === MatchStatus::Waiting;
-$showsCreatorLinks = $role === Role::Creator && $creatorUrl !== null;
+$isFinished = $match->status === MatchStatus::Finished;
+$showsBoard = $match->allowsMoves() || $isFinished;
+$showsCreatorLinks = $role === Role::Creator && $creatorUrl !== null && !$isFinished;
 
 // A spectator has no color, which is both the fixed white-at-the-bottom view
 // and what tells the board to accept no input at all.
 $ownColor = $match->colorFor($role);
 $orientation = $ownColor ?? Color::White;
 
-$heading = match ($role) {
-    Role::Creator => $isWaiting ? 'Your challenge is ready to share' : 'Your opponent has joined',
-    Role::Joiner => 'You have joined the game',
-    Role::Spectator => 'Chess challenge',
+$heading = match (true) {
+    $isFinished => 'Game over',
+    $role === Role::Creator && $isWaiting => 'Your challenge is ready to share',
+    $role === Role::Creator => 'Your opponent has joined',
+    $role === Role::Joiner => 'You have joined the game',
+    default => 'Chess challenge',
 };
 
 $whitePlayer = match ($role) {
@@ -34,6 +38,7 @@ $statusLine = match ($match->status) {
     MatchStatus::Waiting => 'Waiting for the opponent to join',
     MatchStatus::Ready => 'Both players are seated — the game starts with white’s first move',
     MatchStatus::Active => 'Game in progress',
+    MatchStatus::Finished => $match->resultHeadline(),
     default => ucfirst($match->status->value),
 };
 ?>
@@ -59,7 +64,11 @@ $statusLine = match ($match->status) {
         <p class="standby" role="status">Waiting for the opponent to join. Nothing starts until they are here — the clocks stay put.</p>
     <?php endif; ?>
 
-    <?php if ($match->allowsMoves()): ?>
+    <?php if ($isFinished): ?>
+        <p class="result" role="status" data-result><?= e($match->resultHeadline()) ?></p>
+    <?php endif; ?>
+
+    <?php if ($showsBoard): ?>
         <section class="play">
             <div class="clocks" data-clocks aria-live="polite">
                 <div class="clocks__side" data-clock="white">

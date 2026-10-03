@@ -91,14 +91,52 @@ final class GameMatch
         int $blackRemainingMs,
         Color $winner,
     ): self {
+        return $this->withFinished(
+            whiteRemainingMs: $whiteRemainingMs,
+            blackRemainingMs: $blackRemainingMs,
+            winner: $winner,
+            reason: GameResultReason::Timeout,
+        );
+    }
+
+    public function withFinished(
+        int $whiteRemainingMs,
+        int $blackRemainingMs,
+        ?Color $winner,
+        GameResultReason $reason,
+    ): self {
         return $this->with(
             status: MatchStatus::Finished,
             whiteRemainingMs: $whiteRemainingMs,
             blackRemainingMs: $blackRemainingMs,
             resultWinner: $winner,
-            resultReason: GameResultReason::Timeout,
+            resultReason: $reason,
             clearTurnStartedAt: true,
         );
+    }
+
+    /** A short result line for finished games, or empty while play continues. */
+    public function resultHeadline(): string
+    {
+        if ($this->status !== MatchStatus::Finished || $this->resultReason === null) {
+            return '';
+        }
+
+        if ($this->resultWinner === null) {
+            return match ($this->resultReason) {
+                GameResultReason::Stalemate => 'Draw by stalemate',
+                GameResultReason::InsufficientMaterial => 'Draw by insufficient material',
+                default => 'Draw',
+            };
+        }
+
+        $side = ucfirst($this->resultWinner->value);
+
+        return match ($this->resultReason) {
+            GameResultReason::Checkmate => "{$side} wins by checkmate",
+            GameResultReason::Timeout => "{$side} wins on time",
+            default => "{$side} wins",
+        };
     }
 
     public function position(): Position
