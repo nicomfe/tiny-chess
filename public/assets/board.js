@@ -146,6 +146,7 @@ export function startBoard(game) {
 
         if (payload.status === 'finished') {
             drawResult(payload);
+            ground.set({ viewOnly: true, movable: { color: undefined, dests: new Map() } });
         }
 
         if (changed) {

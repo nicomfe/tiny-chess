@@ -654,6 +654,10 @@ check('a finished play link still serves the board', page_attribute($replayPage[
 check('the finished page names the result', str_contains($replayPage['body'], 'checkmate'), $replayPage['body']);
 check('the finished page is read-only for spectators', page_attribute($replayPage['body'], 'color') === '', $replayPage['body']);
 
+$creatorReplay = request('GET', $mate['creatorUrl']);
+check('a finished creator link still serves the board', page_attribute($creatorReplay['body'], 'fen') !== null, $creatorReplay['body']);
+check('the creator replay page names the result', str_contains($creatorReplay['body'], 'checkmate'), $creatorReplay['body']);
+
 fwrite(STDOUT, "\nFool’s mate ends with black winning\n");
 $fools = seated_game($baseUrl);
 check('fool’s mate line is playable', play_line($baseUrl, $fools, ['f2f3', 'e7e5', 'g2g4']));
