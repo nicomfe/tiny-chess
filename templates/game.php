@@ -1,5 +1,6 @@
 <?php
 
+use Chess\Game\Color;
 use Chess\Game\GameMatch;
 use Chess\Game\MatchStatus;
 use Chess\Game\Role;
@@ -11,6 +12,11 @@ use Chess\Game\Role;
 
 $isWaiting = $match->status === MatchStatus::Waiting;
 $showsCreatorLinks = $role === Role::Creator && $creatorUrl !== null;
+
+// A spectator has no color, which is both the fixed white-at-the-bottom view
+// and what tells the board to accept no input at all.
+$ownColor = $match->colorFor($role);
+$orientation = $ownColor ?? Color::White;
 
 $heading = match ($role) {
     Role::Creator => $isWaiting ? 'Your challenge is ready to share' : 'Your opponent has joined',
@@ -27,13 +33,17 @@ $whitePlayer = match ($role) {
 $statusLine = match ($match->status) {
     MatchStatus::Waiting => 'Waiting for the opponent to join',
     MatchStatus::Ready => 'Both players are seated — the game starts with white’s first move',
+    MatchStatus::Active => 'Game in progress',
     default => ucfirst($match->status->value),
 };
 ?>
 <div class="game"
      data-match-id="<?= e($match->id) ?>"
      data-status="<?= e($match->status->value) ?>"
-     data-role="<?= e($role->value) ?>">
+     data-role="<?= e($role->value) ?>"
+     data-fen="<?= e($match->fen) ?>"
+     data-orientation="<?= e($orientation->value) ?>"
+     data-color="<?= e($ownColor?->value ?? '') ?>">
     <h1><?= e($heading) ?></h1>
 
     <dl class="summary">
@@ -47,6 +57,19 @@ $statusLine = match ($match->status) {
 
     <?php if ($isWaiting): ?>
         <p class="standby" role="status">Waiting for the opponent to join. Nothing starts until they are here — the clocks stay put.</p>
+    <?php endif; ?>
+
+    <?php if ($match->allowsMoves()): ?>
+        <section class="play">
+            <!-- The board needs scripting, so its turn line and move list are
+                 left for the board to fill in rather than rendered twice. -->
+            <div class="board-frame">
+                <div class="board" data-board></div>
+            </div>
+            <p class="turn" data-turn role="status"></p>
+            <p class="move-error" data-move-error role="alert" hidden></p>
+            <ol class="moves" data-move-list></ol>
+        </section>
     <?php endif; ?>
 
     <?php if ($showsCreatorLinks): ?>
@@ -74,6 +97,6 @@ $statusLine = match ($match->status) {
             it is what remembers you, so a refresh is fine but another browser would only be watching.</p>
     <?php else: ?>
         <p class="lead">You are watching this challenge<?= $isWaiting ? '' : '. Both seats are taken, so you cannot move pieces' ?>.
-            The board appears here once play begins.</p>
+            <?= $isWaiting ? 'The board appears here once play begins.' : '' ?></p>
     <?php endif; ?>
 </div>

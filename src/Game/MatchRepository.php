@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Chess\Game;
 
+use DateTimeImmutable;
 use PDO;
+use Throwable;
 
 final class MatchRepository
 {
@@ -16,13 +18,14 @@ final class MatchRepository
     {
         $statement = $this->pdo->prepare(
             'INSERT INTO matches
-                (id, status, time_control_seconds, creator_color, creator_token_hash, created_at)
-             VALUES (:id, :status, :time_control_seconds, :creator_color, :creator_token_hash, :created_at)',
+                (id, status, fen, time_control_seconds, creator_color, creator_token_hash, created_at)
+             VALUES (:id, :status, :fen, :time_control_seconds, :creator_color, :creator_token_hash, :created_at)',
         );
 
         $statement->execute([
             'id' => $match->id,
             'status' => $match->status->value,
+            'fen' => $match->fen,
             'time_control_seconds' => $match->timeControl->value,
             'creator_color' => $match->creatorColor->value,
             'creator_token_hash' => $match->creatorTokenHash,
@@ -56,11 +59,114 @@ final class MatchRepository
 
     public function find(string $matchId): ?GameMatch
     {
+        return $this->fetchMatch($matchId, forUpdate: false);
+    }
+
+    /**
+     * Both reads happen in one transaction, so a move landing between them
+     * cannot hand back a match and a move list that disagree.
+     */
+    public function snapshot(string $matchId): ?MatchSnapshot
+    {
+        return $this->transactionally(function () use ($matchId): ?MatchSnapshot {
+            $match = $this->find($matchId);
+
+            return $match === null ? null : new MatchSnapshot($match, $this->movesFor($matchId));
+        });
+    }
+
+    /**
+     * The match as it stands, with the row held until the transaction ends.
+     * Everything a move depends on is read through here, so two browsers
+     * submitting for the same turn arrive one at a time and the second one sees
+     * what the first one left behind.
+     */
+    public function findForUpdate(string $matchId): ?GameMatch
+    {
+        return $this->fetchMatch($matchId, forUpdate: true);
+    }
+
+    public function appendMove(string $matchId, int $moveNumber, PlayedMove $played, DateTimeImmutable $at): void
+    {
+        $statement = $this->pdo->prepare(
+            'INSERT INTO moves (match_id, move_number, uci, san, created_at)
+             VALUES (:match_id, :move_number, :uci, :san, :created_at)',
+        );
+
+        $statement->execute([
+            'match_id' => $matchId,
+            'move_number' => $moveNumber,
+            'uci' => $played->move->uci,
+            'san' => $played->san,
+            'created_at' => $at->format('Y-m-d H:i:s.v'),
+        ]);
+    }
+
+    public function updatePosition(GameMatch $match): void
+    {
+        $statement = $this->pdo->prepare('UPDATE matches SET fen = :fen, status = :status WHERE id = :id');
+        $statement->execute([
+            'fen' => $match->fen,
+            'status' => $match->status->value,
+            'id' => $match->id,
+        ]);
+    }
+
+    public function lastMoveNumber(string $matchId): int
+    {
+        $statement = $this->pdo->prepare('SELECT COALESCE(MAX(move_number), 0) FROM moves WHERE match_id = :match_id');
+        $statement->execute(['match_id' => $matchId]);
+
+        return (int) $statement->fetchColumn();
+    }
+
+    public function movesFor(string $matchId): MoveLog
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT move_number, uci, san FROM moves WHERE match_id = :match_id ORDER BY move_number',
+        );
+        $statement->execute(['match_id' => $matchId]);
+
+        return new MoveLog(array_map(
+            static fn (array $row): RecordedMove => RecordedMove::fromRow($row),
+            $statement->fetchAll(),
+        ));
+    }
+
+    /**
+     * Runs the given work in one transaction, so a ply and the position it
+     * produces are either both stored or neither is.
+     *
+     * @template T
+     * @param callable(): T $work
+     * @return T
+     */
+    public function transactionally(callable $work): mixed
+    {
+        $this->pdo->beginTransaction();
+
+        try {
+            $result = $work();
+        } catch (Throwable $e) {
+            $this->pdo->rollBack();
+
+            throw $e;
+        }
+
+        $this->pdo->commit();
+
+        return $result;
+    }
+
+    private function fetchMatch(string $matchId, bool $forUpdate): ?GameMatch
+    {
         if (!MatchId::isWellFormed($matchId)) {
             return null;
         }
 
-        $statement = $this->pdo->prepare('SELECT * FROM matches WHERE id = :id');
+        $statement = $this->pdo->prepare(
+            'SELECT * FROM matches WHERE id = :id' . ($forUpdate ? ' FOR UPDATE' : ''),
+        );
         $statement->execute(['id' => $matchId]);
         $row = $statement->fetch();
 

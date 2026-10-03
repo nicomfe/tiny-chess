@@ -11,6 +11,14 @@ declare(strict_types=1);
 
 $baseUrl = rtrim($argv[1] ?? 'http://localhost:8080', '/');
 
+const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+/**
+ * White queens on b7xa8 after this line, so promotion checks have a position to
+ * promote from: 1. e4 d5 2. exd5 c6 3. dxc6 Nf6 4. cxb7 a6.
+ */
+const PROMOTION_LINE = ['e2e4', 'd7d5', 'e4d5', 'c7c6', 'd5c6', 'g8f6', 'c6b7', 'a7a6'];
+
 $failures = 0;
 
 function check(string $description, bool $passed, string $detail = ''): void
@@ -166,6 +174,120 @@ function create_challenge(string $baseUrl): array
     ];
 }
 
+/**
+ * A fresh challenge with the opponent already seated, so move checks start from
+ * a match that allows play. The creator has white.
+ *
+ * @return array{matchId: string, playUrl: string, creatorUrl: string, creatorToken: string, joinerCookie: string}
+ */
+function seated_game(string $baseUrl): array
+{
+    $game = create_challenge($baseUrl);
+    $joined = request('GET', $game['playUrl']);
+
+    return $game + ['joinerCookie' => (string) cookie_pair(set_cookie_header($joined['headers'], 'joiner'))];
+}
+
+/**
+ * Submits one UCI move as whoever the given credentials make the caller.
+ *
+ * @return array{status: int, headers: array<int, string>, body: string, json: array<string, mixed>|null}
+ */
+function submit_move(string $baseUrl, string $matchId, string $uci, ?string $joinerCookie = null, string $creatorToken = ''): array
+{
+    $url = $baseUrl . '/api/matches/' . $matchId . '/moves'
+        . ($creatorToken === '' ? '' : '?token=' . urlencode($creatorToken));
+
+    return request('POST', $url, ['uci' => $uci], null, $joinerCookie);
+}
+
+/**
+ * Plays a line from the starting position, white first, so a check can set up a
+ * specific position before testing it. Reports whether every ply was accepted.
+ *
+ * @param array{matchId: string, creatorToken: string, joinerCookie: string} $game
+ * @param list<string> $line
+ */
+function play_line(string $baseUrl, array $game, array $line): bool
+{
+    foreach ($line as $ply => $uci) {
+        $played = $ply % 2 === 0
+            ? submit_move($baseUrl, $game['matchId'], $uci, null, $game['creatorToken'])
+            : submit_move($baseUrl, $game['matchId'], $uci, $game['joinerCookie']);
+
+        if ($played['status'] !== 200) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * The newest ply in a state payload.
+ *
+ * @param array<string, mixed>|null $state
+ * @return array<string, mixed>
+ */
+function last_move(?array $state): array
+{
+    $moves = $state['moves'] ?? [];
+
+    return is_array($moves) && $moves !== [] ? (array) end($moves) : [];
+}
+
+/**
+ * Whether a field is present and explicitly null — which `??` cannot tell apart
+ * from a missing key, and the difference is the whole point for the fields that
+ * later tickets will fill in.
+ *
+ * @param array<string, mixed>|null $payload
+ */
+function is_null_field(?array $payload, string $field): bool
+{
+    return is_array($payload) && array_key_exists($field, $payload) && $payload[$field] === null;
+}
+
+/**
+ * Fires several POSTs at the same time, so a check can see what the server does
+ * when two submissions race for one turn.
+ *
+ * @param list<array{url: string, body: array<string, mixed>}> $posts
+ * @return list<int> the response status codes, in the order given
+ */
+function post_at_once(array $posts): array
+{
+    $multi = curl_multi_init();
+    $handles = [];
+
+    foreach ($posts as $post) {
+        $handle = curl_init($post['url']);
+        curl_setopt_array($handle, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($post['body'], JSON_THROW_ON_ERROR),
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
+            CURLOPT_RETURNTRANSFER => true,
+        ]);
+        curl_multi_add_handle($multi, $handle);
+        $handles[] = $handle;
+    }
+
+    do {
+        curl_multi_exec($multi, $running);
+        curl_multi_select($multi);
+    } while ($running > 0);
+
+    $statuses = [];
+    foreach ($handles as $handle) {
+        $statuses[] = (int) curl_getinfo($handle, CURLINFO_HTTP_CODE);
+        curl_multi_remove_handle($multi, $handle);
+        curl_close($handle);
+    }
+    curl_multi_close($multi);
+
+    return $statuses;
+}
+
 fwrite(STDOUT, "Checking {$baseUrl}\n\nCreate a challenge via the API\n");
 
 $created = request('POST', $baseUrl . '/api/challenges', ['minutes' => 5, 'white' => 'creator']);
@@ -279,6 +401,160 @@ check(
     $joinerToken !== '' && !str_contains(match_state($baseUrl, $game['matchId'])['body'], $joinerToken),
 );
 
+fwrite(STDOUT, "\nNo ply lands before both players are seated\n");
+$unseated = create_challenge($baseUrl);
+$tooEarly = submit_move($baseUrl, $unseated['matchId'], 'e2e4', null, $unseated['creatorToken']);
+check('a move while waiting is refused', $tooEarly['status'] === 409, "got {$tooEarly['status']}");
+check('the refusal names the reason', ($tooEarly['json']['error'] ?? null) === 'match_not_started', $tooEarly['body']);
+
+$stillWaiting = match_state($baseUrl, $unseated['matchId'], null, $unseated['creatorToken']);
+check('the match is still waiting', ($stillWaiting['json']['status'] ?? null) === 'waiting');
+check('no ply was recorded', ($stillWaiting['json']['moveCount'] ?? null) === 0, $stillWaiting['body']);
+check('the position is untouched', ($stillWaiting['json']['fen'] ?? null) === START_FEN, $stillWaiting['body']);
+
+fwrite(STDOUT, "\nOnly the seated player to move may move\n");
+$game = seated_game($baseUrl);
+
+$bySpectator = submit_move($baseUrl, $game['matchId'], 'e2e4');
+check('a spectator cannot move', $bySpectator['status'] === 403, "got {$bySpectator['status']}");
+check('the spectator is told they are not a player', ($bySpectator['json']['error'] ?? null) === 'not_a_player', $bySpectator['body']);
+
+$outOfTurn = submit_move($baseUrl, $game['matchId'], 'e7e5', $game['joinerCookie']);
+check('black cannot open the game', $outOfTurn['status'] === 409, "got {$outOfTurn['status']}");
+check('the out-of-turn refusal says so', ($outOfTurn['json']['error'] ?? null) === 'not_your_turn', $outOfTurn['body']);
+
+$illegal = submit_move($baseUrl, $game['matchId'], 'e2e5', null, $game['creatorToken']);
+check('an illegal move is refused with 422', $illegal['status'] === 422, "got {$illegal['status']}");
+check('the illegal refusal says so', ($illegal['json']['error'] ?? null) === 'illegal_move', $illegal['body']);
+check('the mover is given something readable', is_string($illegal['json']['message'] ?? null) && $illegal['json']['message'] !== '', $illegal['body']);
+
+foreach (['', 'e2', 'e2e9', 'e2e4k', 'e2e2', 'resign'] as $junk) {
+    $malformed = submit_move($baseUrl, $game['matchId'], $junk, null, $game['creatorToken']);
+    check(
+        "'{$junk}' is not a move the board understands",
+        $malformed['status'] === 422 && ($malformed['json']['error'] ?? null) === 'malformed_move',
+        $malformed['body'],
+    );
+}
+
+$afterRefusals = match_state($baseUrl, $game['matchId'], $game['joinerCookie']);
+check('refused attempts leave the position alone', ($afterRefusals['json']['fen'] ?? null) === START_FEN, $afterRefusals['body']);
+check('refused attempts leave the match ready', ($afterRefusals['json']['status'] ?? null) === 'ready');
+check('refused attempts append nothing', ($afterRefusals['json']['moveCount'] ?? null) === 0);
+
+fwrite(STDOUT, "\nWhite's first move starts the game\n");
+$opening = submit_move($baseUrl, $game['matchId'], 'e2e4', null, $game['creatorToken']);
+check('the move is accepted', $opening['status'] === 200, $opening['body']);
+check('ready turns into active', ($opening['json']['status'] ?? null) === 'active', $opening['body']);
+check('it is now black to move', ($opening['json']['turn'] ?? null) === 'black', $opening['body']);
+check(
+    'the ply is stored as UCI with a 1-based number',
+    last_move($opening['json']) == ['number' => 1, 'uci' => 'e2e4', 'san' => 'e4'],
+    json_encode(last_move($opening['json'])),
+);
+check(
+    'the cached FEN followed the move',
+    ($opening['json']['fen'] ?? null) === 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1',
+    (string) ($opening['json']['fen'] ?? ''),
+);
+check(
+    'clock, result and draw fields are present but unused',
+    is_null_field($opening['json'], 'clocks')
+        && is_null_field($opening['json'], 'result')
+        && is_null_field($opening['json'], 'drawOffer'),
+    $opening['body'],
+);
+
+fwrite(STDOUT, "\nThe move reaches the opponent and the spectators\n");
+$opponentView = match_state($baseUrl, $game['matchId'], $game['joinerCookie']);
+check('the opponent sees the new position', ($opponentView['json']['fen'] ?? null) === ($opening['json']['fen'] ?? ''));
+check('the opponent sees one ply', ($opponentView['json']['moveCount'] ?? null) === 1, $opponentView['body']);
+check('the opponent is the one who may move', ($opponentView['json']['you']['canMove'] ?? null) === true, $opponentView['body']);
+check('the opponent is given legal destinations', is_array($opponentView['json']['dests']['e7'] ?? null), $opponentView['body']);
+
+$spectatorView = match_state($baseUrl, $game['matchId']);
+check('a spectator sees the position too', ($spectatorView['json']['fen'] ?? null) === ($opening['json']['fen'] ?? ''));
+check('a spectator may not move', ($spectatorView['json']['you']['canMove'] ?? null) === false, $spectatorView['body']);
+check('a spectator is given no destinations', is_null_field($spectatorView['json'], 'dests'), $spectatorView['body']);
+check('a spectator is given no color to play', is_null_field($spectatorView['json']['you'] ?? null, 'color'), $spectatorView['body']);
+
+$moverView = match_state($baseUrl, $game['matchId'], null, $game['creatorToken']);
+check('the player who just moved has to wait', ($moverView['json']['you']['canMove'] ?? null) === false, $moverView['body']);
+check('the waiting player is given no destinations', is_null_field($moverView['json'], 'dests'), $moverView['body']);
+check('each player is told their color', ($moverView['json']['you']['color'] ?? null) === 'white', $moverView['body']);
+
+fwrite(STDOUT, "\nPolling with a cursor\n");
+$caughtUp = request('GET', $baseUrl . '/api/matches/' . $game['matchId'] . '?since=1', null, null, $game['joinerCookie']);
+check('a caught-up poll still reports the position', ($caughtUp['json']['fen'] ?? null) === ($opening['json']['fen'] ?? ''));
+check('a caught-up poll does not resend plies', ($caughtUp['json']['moves'] ?? null) === [], $caughtUp['body']);
+check('a caught-up poll still reports the total', ($caughtUp['json']['moveCount'] ?? null) === 1, $caughtUp['body']);
+$fromBehind = request('GET', $baseUrl . '/api/matches/' . $game['matchId'] . '?since=0', null, null, $game['joinerCookie']);
+check('a poll from behind gets the plies it is missing', count($fromBehind['json']['moves'] ?? []) === 1, $fromBehind['body']);
+
+fwrite(STDOUT, "\nPromotion is the mover's choice\n");
+foreach (['q' => 'queen', 'r' => 'rook', 'b' => 'bishop', 'n' => 'knight'] as $piece => $name) {
+    $promoting = seated_game($baseUrl);
+    check("the line up to the promotion is legal (for the {$name})", play_line($baseUrl, $promoting, PROMOTION_LINE));
+
+    $promoted = submit_move($baseUrl, $promoting['matchId'], 'b7a8' . $piece, null, $promoting['creatorToken']);
+    check("promoting to a {$name} is allowed", $promoted['status'] === 200, $promoted['body']);
+    check("the {$name} is part of the stored UCI", (last_move($promoted['json'])['uci'] ?? null) === 'b7a8' . $piece, $promoted['body']);
+    check("the ply is numbered 9", (last_move($promoted['json'])['number'] ?? null) === 9, $promoted['body']);
+
+    if ($piece === 'n') {
+        check(
+            'the board shows the chosen piece, not a queen',
+            str_starts_with((string) ($promoted['json']['fen'] ?? ''), 'Nnbqkb1r/'),
+            (string) ($promoted['json']['fen'] ?? ''),
+        );
+    }
+}
+
+$mustChoose = seated_game($baseUrl);
+play_line($baseUrl, $mustChoose, PROMOTION_LINE);
+$noChoice = submit_move($baseUrl, $mustChoose['matchId'], 'b7a8', null, $mustChoose['creatorToken']);
+check('a promoting move with no piece named is refused', $noChoice['status'] === 422, "got {$noChoice['status']}");
+check('the promotion refusal is about legality', ($noChoice['json']['error'] ?? null) === 'illegal_move', $noChoice['body']);
+$spuriousChoice = submit_move($baseUrl, $mustChoose['matchId'], 'b7b8q', null, $mustChoose['creatorToken']);
+check('naming a piece on a move that cannot promote is refused', $spuriousChoice['status'] === 422, $spuriousChoice['body']);
+
+fwrite(STDOUT, "\nTwo submissions for the same turn cannot both land\n");
+$race = seated_game($baseUrl);
+$movesUrl = $baseUrl . '/api/matches/' . $race['matchId'] . '/moves?token=' . urlencode($race['creatorToken']);
+$raced = post_at_once([
+    ['url' => $movesUrl, 'body' => ['uci' => 'e2e4']],
+    ['url' => $movesUrl, 'body' => ['uci' => 'd2d4']],
+]);
+check(
+    'exactly one of two simultaneous moves is accepted',
+    count(array_filter($raced, static fn (int $status): bool => $status === 200)) === 1,
+    implode(', ', $raced),
+);
+check(
+    'only one ply was appended',
+    (match_state($baseUrl, $race['matchId'])['json']['moveCount'] ?? null) === 1,
+    match_state($baseUrl, $race['matchId'])['body'],
+);
+
+fwrite(STDOUT, "\nThe board on the page\n");
+$board = seated_game($baseUrl);
+
+$creatorBoard = request('GET', $board['creatorUrl']);
+check('the creator is given a board', page_attribute($creatorBoard['body'], 'fen') === START_FEN, (string) page_attribute($creatorBoard['body'], 'fen'));
+check('white sits at the bottom for white', page_attribute($creatorBoard['body'], 'orientation') === 'white');
+check('the creator is told they play white', page_attribute($creatorBoard['body'], 'color') === 'white');
+
+$joinerBoard = request('GET', $board['playUrl'], null, null, $board['joinerCookie']);
+check('black sits at the bottom for black', page_attribute($joinerBoard['body'], 'orientation') === 'black');
+check('the opponent is told they play black', page_attribute($joinerBoard['body'], 'color') === 'black');
+
+$spectatorBoard = request('GET', $board['playUrl']);
+check('a spectator sees white at the bottom', page_attribute($spectatorBoard['body'], 'orientation') === 'white');
+check('a spectator is handed no color, so the board stays view-only', page_attribute($spectatorBoard['body'], 'color') === '');
+
+check('the board library is served', request('GET', $baseUrl . '/assets/vendor/chessground.min.js')['status'] === 200);
+check('the board stylesheet is served', request('GET', $baseUrl . '/assets/vendor/chessground.css')['status'] === 200);
+
 fwrite(STDOUT, "\nPretty URLs and HTML pages\n");
 check('create form responds at /', request('GET', $baseUrl . '/')['status'] === 200);
 check('play page responds at /game/{matchId}', $publicPage['status'] === 200, "got {$publicPage['status']}");
@@ -295,6 +571,8 @@ check('malformed match id returns 404', $malformed['status'] === 404, "got {$mal
 
 fwrite(STDOUT, "\nWrong methods and missing pages\n");
 check('posting to a play link is rejected', request('POST', $playUrl, null, [])['status'] === 405);
+check('reading the moves endpoint is rejected', request('GET', $baseUrl . '/api/matches/' . $matchId . '/moves')['status'] === 405);
+check('moving in an unknown match is a 404', submit_move($baseUrl, str_repeat('a', 32), 'e2e4')['status'] === 404);
 check('an unknown path is a 404', request('GET', $baseUrl . '/nope')['status'] === 404);
 
 fwrite(STDOUT, "\nForm submission\n");

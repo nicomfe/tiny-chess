@@ -9,6 +9,8 @@ use Chess\Game\Challenges;
 use Chess\Game\CreatedChallenge;
 use Chess\Game\InvalidChallengeInput;
 use Chess\Game\MatchLinkFactory;
+use Chess\Game\MatchSnapshot;
+use Chess\Game\MoveLog;
 use Chess\Game\PublicMatchState;
 use Chess\Game\Role;
 use Chess\View\View;
@@ -77,7 +79,7 @@ final class ChallengeController
         $match = $created->match;
         $links = $this->linkFactory->forRequestBaseUrl($request->baseUrl());
 
-        return PublicMatchState::forRole($match, Role::Creator) + [
+        return PublicMatchState::forRole(new MatchSnapshot($match, MoveLog::empty()), Role::Creator) + [
             'creatorUrl' => $links->creatorUrl($match->id, $created->creatorToken),
             'playUrl' => $links->playUrl($match->id),
         ];

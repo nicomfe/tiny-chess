@@ -7,6 +7,10 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
+    "vendor": "mkdir -p public/assets/vendor && cp node_modules/chessground/dist/chessground.min.js public/assets/vendor/chessground.min.js && cat node_modules/chessground/assets/chessground.base.css node_modules/chessground/assets/chessground.brown.css node_modules/chessground/assets/chessground.cburnett.css > public/assets/vendor/chessground.css",
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "chessground": "^9.2.1"
   }
 }

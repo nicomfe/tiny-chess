@@ -18,6 +18,13 @@ docker compose exec php php scripts/migrate.php
 
 The app is then on <http://localhost:8080>.
 
+The board library is vendored into `public/assets/vendor/` and committed, so neither Docker nor
+npm is needed to serve it. Refresh it after bumping Chessground:
+
+```bash
+npm install && npm run vendor
+```
+
 `APP_SECRET` keys the player token hashes: change it and every existing creator link stops
 resolving, so generate it once per environment and keep it out of version control.
 
@@ -28,10 +35,11 @@ docker compose exec php php scripts/api-check.php http://web
 ```
 
 This drives the HTTP API as a black box — creating challenges, rejecting invalid options,
-resolving the creator role from a saved link, and confirming the creator token never appears in
-public responses. Per the specification there is no automated unit test suite; this script is the
-manual check. Run it against any origin, e.g. `php scripts/api-check.php http://localhost:8080`
-if you do have PHP on the host.
+resolving the creator role from a saved link, confirming the creator token never appears in public
+responses, and playing plies through legality, turn order, promotion and simultaneous submissions.
+Per the specification there is no automated unit test suite; this script is the manual check. Run
+it against any origin, e.g. `php scripts/api-check.php http://localhost:8080` if you do have PHP on
+the host.
 
 Responses never include error detail; when something breaks, read the log:
 
@@ -45,7 +53,7 @@ docker compose logs -f php
 | ------------------ | ---------------------------------------------------------------- |
 | `public/`          | Document root: front controller plus static assets               |
 | `src/`             | Application code, autoloaded as `Chess\` (PSR-4)                 |
-| `src/Game/`        | Match domain: ids, time control, challenge creation, seating     |
+| `src/Game/`        | Match domain: ids, time control, creation, seating, moves        |
 | `templates/`       | Plain PHP views                                                  |
 | `db/migrations/`   | Numbered SQL migrations, applied by `scripts/migrate.php`        |
 | `docker/`          | Local nginx and php-fpm images                                   |
@@ -79,3 +87,26 @@ loses its cookie has no way back in. Every state response reports the caller's r
 
 Only opening the play page can claim a seat — the state API reads roles but never hands one out, so
 a background poll cannot seat anyone by accident.
+
+## Playing
+
+| Endpoint                            | What it does                                            |
+| ----------------------------------- | ------------------------------------------------------- |
+| `GET /api/matches/{id}?since={n}`   | Public state; `n` is the newest ply the caller has       |
+| `POST /api/matches/{id}/moves`      | Submits one move as `{"uci": "e2e4"}`                    |
+
+The client is never authoritative. `src/Game/Position.php` is the only code that knows the rules,
+and every submission is checked against the stored FEN under a row lock: both seats filled, game
+not over, the mover's turn, and the move legal — including that a promotion piece is named exactly
+when the move calls for one. A refused move changes nothing and comes back with a reason the mover
+is shown (`not_a_player`, `not_your_turn`, `match_not_started`, `illegal_move`, …).
+
+Plies are stored as UCI with a 1-based move number, keyed `(match_id, move_number)` so two
+submissions racing for one turn cannot both land; SAN is stored alongside only so the move list can
+be shown without replaying the game. The match row carries the current FEN, and white's first
+accepted move is what turns `ready` into `active`.
+
+Boards poll once a second with the newest ply they know, and a response carries only the plies
+after it. The board is drawn from the server's FEN rather than from the move list, so it cannot
+drift. Players get a `dests` map of legal moves for their own turn and nothing otherwise, which is
+also what leaves a spectator's board with nothing to drag.

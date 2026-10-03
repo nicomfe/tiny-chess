@@ -121,6 +121,121 @@ button:hover {
     padding: 0.75rem 1rem;
 }
 
+.play {
+    margin-bottom: 2rem;
+}
+
+/* Chessground turns the element it is handed into its own wrapper and lays
+   everything out absolutely inside it, so the square has to be sized from here.
+   The frame carries the gutter the coordinates are moved out into; by default
+   they sit on the squares, where pieces cover them. */
+.board-frame {
+    width: min(30rem, 100%);
+    margin: 0 auto 1rem;
+    padding: 0 0 1.25rem 1.25rem;
+}
+
+.board {
+    width: 100%;
+    aspect-ratio: 1;
+}
+
+.board coords.ranks {
+    top: 0;
+    left: -1.25rem;
+    width: 1.25rem;
+    justify-content: center;
+}
+
+.board coords.ranks coord {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: none;
+}
+
+.board coords.files {
+    left: 0;
+    bottom: -1.25rem;
+    height: 1.25rem;
+    align-items: center;
+}
+
+.board coords coord {
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.turn {
+    color: var(--text);
+    font-weight: 600;
+    margin: 0 0 0.75rem;
+    min-height: 1.55em;
+    text-align: center;
+}
+
+.move-error {
+    background: rgba(242, 139, 130, 0.12);
+    border-left: 3px solid var(--danger);
+    color: var(--danger);
+    margin: 0 0 1rem;
+    padding: 0.6rem 0.9rem;
+}
+
+.promotion {
+    background: var(--panel);
+    border: 1px solid var(--panel-accent);
+    border-radius: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding: 0.9rem 1rem;
+}
+
+.promotion p {
+    color: var(--muted);
+    flex: 1 0 100%;
+    margin: 0;
+}
+
+.promotion__cancel {
+    background: var(--panel-accent);
+    color: var(--muted);
+}
+
+/* White and black halves of a move sit side by side, numbered once per pair the
+   way a scoresheet reads. */
+.moves {
+    background: var(--panel);
+    border: 1px solid var(--panel-accent);
+    border-radius: 10px;
+    column-gap: 1.5rem;
+    counter-reset: move 0;
+    display: grid;
+    font-variant-numeric: tabular-nums;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    list-style: none;
+    margin: 0;
+    padding: 0.75rem 1rem;
+}
+
+.moves:empty {
+    display: none;
+}
+
+.moves__white {
+    counter-increment: move;
+}
+
+.moves__white::before {
+    color: var(--muted);
+    content: counter(move) ". ";
+}
+
 .link-card {
     background: var(--panel);
     border: 1px solid var(--panel-accent);

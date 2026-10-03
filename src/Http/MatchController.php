@@ -5,11 +5,17 @@ declare(strict_types=1);
 namespace Chess\Http;
 
 use Chess\Game\Challenges;
+use Chess\Game\GameMatch;
 use Chess\Game\MatchLinkFactory;
+use Chess\Game\MatchSnapshot;
+use Chess\Game\MoveRejected;
+use Chess\Game\MoveRejection;
+use Chess\Game\Moves;
 use Chess\Game\PublicMatchState;
 use Chess\Game\Role;
 use Chess\Game\Seat;
 use Chess\Game\Seating;
+use Chess\Game\UciMove;
 use Chess\View\View;
 
 final class MatchController
@@ -17,6 +23,7 @@ final class MatchController
     public function __construct(
         private readonly Challenges $challenges,
         private readonly Seating $seating,
+        private readonly Moves $moves,
         private readonly MatchLinkFactory $linkFactory,
         private readonly View $view,
     ) {
@@ -56,18 +63,76 @@ final class MatchController
     /** @param array<string, string> $params */
     public function state(Request $request, array $params): Response
     {
+        $snapshot = $this->challenges->snapshot($params['matchId']);
+        if ($snapshot === null) {
+            return Response::json(['error' => 'match_not_found'], 404);
+        }
+
+        return $this->stateResponse($request, $snapshot, $this->roleFor($request, $snapshot->match));
+    }
+
+    /** @param array<string, string> $params */
+    public function submitMove(Request $request, array $params): Response
+    {
         $match = $this->challenges->find($params['matchId']);
         if ($match === null) {
             return Response::json(['error' => 'match_not_found'], 404);
         }
 
-        $seat = $this->seating->resolve(
+        // Parsed at the edge, the way challenge input is, so the domain only
+        // ever sees something that is at least shaped like a move.
+        $move = UciMove::parse($request->bodyParam('uci'));
+        if ($move === null) {
+            return $this->rejection(MoveRejection::MalformedMove);
+        }
+
+        $role = $this->roleFor($request, $match);
+
+        try {
+            $snapshot = $this->moves->submit($match, $role, $move);
+        } catch (MoveRejected $rejected) {
+            return $this->rejection($rejected->reason);
+        }
+
+        // The mover gets the new state straight back, so their board does not
+        // have to wait for the next poll to be sure the ply landed.
+        return $this->stateResponse($request, $snapshot, $role);
+    }
+
+    private function roleFor(Request $request, GameMatch $match): Role
+    {
+        return $this->seating->resolve(
             $match,
             $request->queryParam('token'),
             JoinerCookie::readFrom($request, $match->id),
-        );
+        )->role;
+    }
 
-        return Response::json(PublicMatchState::forRole($seat->match, $seat->role));
+    private function stateResponse(Request $request, MatchSnapshot $snapshot, Role $role): Response
+    {
+        return Response::json(PublicMatchState::forRole(
+            $snapshot,
+            $role,
+            max(0, (int) ($request->queryParam('since') ?? 0)),
+        ));
+    }
+
+    private function rejection(MoveRejection $reason): Response
+    {
+        return Response::json(
+            ['error' => $reason->value, 'message' => $reason->message()],
+            self::statusFor($reason),
+        );
+    }
+
+    private static function statusFor(MoveRejection $reason): int
+    {
+        return match ($reason) {
+            MoveRejection::MatchNotFound => 404,
+            MoveRejection::NotAPlayer => 403,
+            MoveRejection::MatchNotStarted, MoveRejection::MatchFinished, MoveRejection::NotYourTurn => 409,
+            MoveRejection::MalformedMove, MoveRejection::IllegalMove => 422,
+        };
     }
 
     private function withSeatCookie(Response $response, Request $request, Seat $seat): Response

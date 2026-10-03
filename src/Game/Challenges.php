@@ -24,6 +24,7 @@ final class Challenges
         $match = new GameMatch(
             id: MatchId::generate(),
             status: MatchStatus::Waiting,
+            fen: Position::STARTING_FEN,
             timeControl: $timeControl,
             creatorColor: $creatorColor,
             creatorTokenHash: $this->tokens->hash($creatorToken),
@@ -38,5 +39,11 @@ final class Challenges
     public function find(string $matchId): ?GameMatch
     {
         return $this->matches->find($matchId);
+    }
+
+    /** The match together with its plies, consistent with one another. */
+    public function snapshot(string $matchId): ?MatchSnapshot
+    {
+        return $this->matches->snapshot($matchId);
     }
 }
