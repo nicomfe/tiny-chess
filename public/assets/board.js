@@ -194,18 +194,6 @@ export function startBoard(game) {
         return newest ? [newest.uci.slice(0, 2), newest.uci.slice(2, 4)] : undefined;
     }
 
-    function drawEventLabel(event) {
-        if (event.kind === 'accept') {
-            return 'Draw accepted';
-        }
-
-        if (event.kind === 'decline') {
-            return 'Draw declined';
-        }
-
-        return 'Draw offered';
-    }
-
     function drawMoveList() {
         if (moveList === null) {
             return;
@@ -224,11 +212,16 @@ export function startBoard(game) {
                     break;
                 }
 
+                eventIndex += 1;
+
+                if (event.kind !== 'accept') {
+                    continue;
+                }
+
                 const item = document.createElement('li');
                 item.className = `moves__draw moves__draw--${event.by}`;
-                item.textContent = drawEventLabel(event);
+                item.textContent = 'Draw accepted';
                 items.push(item);
-                eventIndex += 1;
             }
         };
 
