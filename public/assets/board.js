@@ -340,8 +340,38 @@ export function startBoard(game) {
         }
     }
 
-    game.querySelector('[data-resign]')?.addEventListener('click', () => {
+    const resignConfirm = game.querySelector('[data-resign-confirm]');
+    const resignNo = game.querySelector('[data-resign-no]');
+
+    function openResignConfirm() {
+        if (resignConfirm === null) {
+            return;
+        }
+
+        resignConfirm.hidden = false;
+        resignNo?.focus();
+    }
+
+    function closeResignConfirm() {
+        if (resignConfirm === null) {
+            return;
+        }
+
+        resignConfirm.hidden = true;
+    }
+
+    game.querySelector('[data-resign]')?.addEventListener('click', openResignConfirm);
+    game.querySelector('[data-resign-yes]')?.addEventListener('click', () => {
+        closeResignConfirm();
         postAction('/resign', {});
+    });
+    resignNo?.addEventListener('click', closeResignConfirm);
+    game.querySelector('[data-resign-confirm-dismiss]')?.addEventListener('click', closeResignConfirm);
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && resignConfirm !== null && !resignConfirm.hidden) {
+            closeResignConfirm();
+        }
     });
     game.querySelector('[data-offer-draw]')?.addEventListener('click', () => {
         postAction('/draw', { action: 'offer' });

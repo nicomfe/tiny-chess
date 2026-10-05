@@ -240,6 +240,8 @@ body.game-page .game__board-stack {
 }
 
 .game__board-stack .board-frame {
+    position: relative;
+    container-type: inline-size;
     width: 100%;
     margin: 0;
 }
@@ -642,6 +644,86 @@ body.game-page .game--share-waiting {
     border: 1px solid var(--panel-accent);
     border-radius: 999px;
     padding: 0.35rem 0.65rem;
+}
+
+.resign-confirm {
+    position: absolute;
+    inset: 0;
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.65rem;
+}
+
+.resign-confirm[hidden] {
+    display: none;
+}
+
+.resign-confirm__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.78);
+    border: none;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+}
+
+.resign-confirm__panel {
+    position: relative;
+    z-index: 1;
+    width: min(100%, 15.5rem);
+    padding: 1rem 1.1rem 1.05rem;
+    text-align: center;
+    background: var(--panel);
+    border: 1px solid var(--panel-accent);
+    border-radius: 12px;
+    box-shadow: 0 10px 36px rgba(0, 0, 0, 0.45);
+}
+
+.resign-confirm__title {
+    margin: 0 0 0.45rem;
+    font-size: clamp(0.82rem, 4.2cqw, 1.05rem);
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.resign-confirm__lead {
+    margin: 0 0 0.85rem;
+    color: var(--muted);
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
+.resign-confirm__actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+}
+
+.resign-confirm__yes {
+    font-size: 0.95rem;
+    padding: 0.65rem 1rem;
+    border-radius: 8px;
+    width: 100%;
+}
+
+.resign-confirm__cancel {
+    background: none;
+    border: none;
+    padding: 0.25rem 0.5rem;
+    font: inherit;
+    font-size: 0.78rem;
+    color: var(--muted);
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.resign-confirm__cancel:hover {
+    color: var(--text);
 }
 
 /* —— Create challenge home (matches share-wait hero) —— */

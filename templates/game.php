@@ -101,6 +101,31 @@ $statusLine = match ($match->status) {
                         </div>
                         <div class="board-frame">
                             <div class="board" data-board></div>
+                            <?php if ($ownColor !== null && !$isFinished): ?>
+                                <div class="resign-confirm" data-resign-confirm hidden>
+                                    <button type="button"
+                                            class="resign-confirm__backdrop"
+                                            data-resign-confirm-dismiss
+                                            aria-label="Cancel resignation"></button>
+                                    <div class="resign-confirm__panel"
+                                         role="dialog"
+                                         aria-modal="true"
+                                         aria-labelledby="resign-confirm-title">
+                                        <h2 id="resign-confirm-title" class="resign-confirm__title">Resign this game?</h2>
+                                        <p class="resign-confirm__lead">Your opponent will win. This cannot be undone.</p>
+                                        <div class="resign-confirm__actions">
+                                            <button type="button"
+                                                    class="resign-confirm__yes actions__resign"
+                                                    data-resign-yes>
+                                                Yes, resign
+                                            </button>
+                                            <button type="button" class="resign-confirm__cancel" data-resign-no>
+                                                No, keep playing
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
                         </div>
                         <div class="game__clock clocks__side" data-clock="<?= e($clockBelow->value) ?>">
                             <span class="clocks__label"><?= $clockBelow === Color::White ? 'White' : 'Black' ?></span>
