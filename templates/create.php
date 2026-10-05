@@ -11,7 +11,7 @@ $white ??= 'creator';
     <div class="share-wait__shell create-home__shell">
         <div class="share-wait__column">
             <h1 class="share-wait__title">Challenge someone to chess</h1>
-            <p class="share-wait__lead">No account needed. Pick a time control, choose colors, and you get a link to share.</p>
+            <p class="share-wait__lead">No account needed</p>
 
             <?php if ($error !== null): ?>
                 <p class="error create-home__error" role="alert"><?= e($error) ?></p>
