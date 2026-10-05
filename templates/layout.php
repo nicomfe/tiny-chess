@@ -1,6 +1,7 @@
 <?php
 /** @var string $title */
 /** @var string $content */
+/** @var string $bodyClass */
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -12,7 +13,7 @@
     <link rel="stylesheet" href="/assets/vendor/chessground.css">
     <link rel="stylesheet" href="/assets/app.css">
 </head>
-<body>
+<body<?= $bodyClass !== '' ? ' class="' . e($bodyClass) . '"' : '' ?>>
     <main>
         <a class="brand" href="/">Casual Chess</a>
         <?= $content ?>

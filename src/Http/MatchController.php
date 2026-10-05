@@ -56,6 +56,7 @@ final class MatchController
 
         $response = Response::html($this->view->render('game', [
             'title' => 'Chess challenge',
+            'bodyClass' => 'game-page',
             'match' => $seat->match,
             'role' => $seat->role,
             'playUrl' => $links->playUrl($match->id),

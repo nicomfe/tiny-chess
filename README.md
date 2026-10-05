@@ -28,6 +28,123 @@ npm install && npm run vendor
 `APP_SECRET` keys the player token hashes: change it and every existing creator link stops
 resolving, so generate it once per environment and keep it out of version control.
 
+## Deploy to production
+
+Production is Apache (or compatible) PHP + MySQL on your VPS or shared host — not Docker. You
+build on your machine and upload the bundle with FileZilla (or any FTP/SFTP client).
+
+### One-time setup
+
+1. Copy `.env.example` to `.env.production` and set production values:
+   - `APP_SECRET` — generate once with `openssl rand -hex 32` and **never change** after go-live
+     (changing it invalidates every creator link).
+   - `APP_BASE_URL` — your public origin, e.g. `https://chess.example.com` (no trailing slash).
+   - `DB_*` — MySQL credentials from your host (often `DB_HOST=localhost`).
+2. Create an empty MySQL database and user on the host; grant the user full access to that database.
+
+### Build the upload bundle
+
+On your Mac (PHP 8.2+ and [Composer](https://getcomposer.org/) on PATH):
+
+```bash
+chmod +x scripts/build-prod.sh   # once
+./scripts/build-prod.sh
+```
+
+This writes a fresh tree under `dist/`:
+
+- Application code, templates, migrations, and `public/` (including vendored Chessground assets).
+- `vendor/` from `composer install --no-dev --optimize-autoloader`.
+- `.env` copied from your local `.env.production` (secrets stay out of git).
+
+If Composer is only available inside Docker locally:
+
+```bash
+docker compose exec php composer install --no-dev --optimize-autoloader
+./scripts/build-prod.sh
+```
+
+Optional: after bumping the `chessground` npm dependency, run `npm install && npm run vendor`
+**before** `./scripts/build-prod.sh` so `public/assets/vendor/` is up to date.
+
+### Upload with FileZilla
+
+1. Connect to your server (SFTP if the host offers it; otherwise FTP).
+2. Choose a directory **outside** the web-visible tree if you can (e.g. `~/chess-game/`). Upload
+   **everything inside** `dist/` — `public/`, `src/`, `vendor/`, `.env`, and the rest — not the
+   `dist` folder name itself.
+3. Point the site **document root** at the `public/` folder inside that upload (cPanel “Document
+   Root”, Plesk “Hosting settings”, or your provider’s equivalent). Pretty URLs rely on
+   `public/.htaccess` and `mod_rewrite`.
+4. PHP must be **8.2 or newer** with PDO MySQL enabled (typical on managed PHP hosting).
+
+Do **not** upload `.env.production`, `.git/`, `docker/`, or `node_modules/`. The build script already
+omits those.
+
+### Database migrations
+
+After the first upload (and after any deploy that adds new files under `db/migrations/`), apply
+pending migrations once.
+
+**With shell + PHP** (ideal):
+
+```bash
+cd /path/to/your/upload
+php scripts/migrate.php
+```
+
+If you only have a control-panel “Run PHP script” or cron, run the same command there against the
+upload root (the directory that contains `vendor/` and `.env`).
+
+**SQL only** (phpMyAdmin, Adminer, host “Run SQL”, etc.) — use this when the host does not let you
+run CLI PHP. The app ships the same files under `db/migrations/` in your upload; run them **in
+numeric order** (`001_…` through `007_…` today). Skip any file whose effects are already in the
+database (e.g. `matches` already exists → start at `002_…`).
+
+1. Create the migration tracker (once per database):
+
+```sql
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    filename VARCHAR(255) NOT NULL,
+    applied_at DATETIME(3) NOT NULL,
+    PRIMARY KEY (filename)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+```
+
+2. For each migration file you execute, paste its full contents into the SQL runner, run it, then
+   record it (repeat for every new file):
+
+```sql
+INSERT INTO schema_migrations (filename, applied_at)
+VALUES ('001_create_matches.sql', UTC_TIMESTAMP(3));
+```
+
+Use the real basename for each file (`002_add_joiner_seat.sql`, …). To see what is already
+applied: `SELECT filename FROM schema_migrations ORDER BY filename`.
+
+On later deploys, run only migrations that are **not** listed there, then `INSERT` one row per new
+file. That matches what `scripts/migrate.php` would do, so you can switch to PHP later without
+double-applying.
+
+### Smoke test
+
+Open `APP_BASE_URL` in a browser: create a challenge, open both links, play a move.
+
+If you have shell access and PHP on the host:
+
+```bash
+php scripts/api-check.php https://your-domain.example
+```
+
+Use your host’s error log when something fails; API responses intentionally hide details.
+
+### Later releases
+
+1. Edit code locally, run `./scripts/build-prod.sh` again.
+2. Upload changed files over FTP (at minimum anything under `public/`, `src/`, `templates/`, and
+   new migration SQL; replace `vendor/` when `composer.lock` changed).
+3. Run `php scripts/migrate.php` when new migrations exist.
+
 ## Check it works
 
 ```bash

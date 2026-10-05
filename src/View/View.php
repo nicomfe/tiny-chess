@@ -22,6 +22,7 @@ final class View
         return $this->capture('layout', [
             'title' => $data['title'] ?? 'Chess',
             'content' => $content,
+            'bodyClass' => $data['bodyClass'] ?? '',
         ]);
     }
 

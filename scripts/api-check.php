@@ -143,6 +143,18 @@ function page_attribute(string $body, string $attribute): ?string
     return $found[1] ?? null;
 }
 
+/** Which side's clock sits under the board (the player's side when seated). */
+function clock_below_board(string $body): ?string
+{
+    if (!preg_match('/class="game__board-stack"[^>]*>(.*?)<p class="turn"/s', $body, $stack)) {
+        return null;
+    }
+
+    preg_match_all('/data-clock="(white|black)"/', $stack[1], $clocks);
+
+    return $clocks[1][array_key_last($clocks[1])] ?? null;
+}
+
 /**
  * Public state for a match, as whoever the given credentials make the caller.
  *
@@ -1017,11 +1029,13 @@ $board = seated_game($baseUrl);
 $creatorBoard = request('GET', $board['creatorUrl']);
 check('the creator is given a board', page_attribute($creatorBoard['body'], 'fen') === START_FEN, (string) page_attribute($creatorBoard['body'], 'fen'));
 check('white sits at the bottom for white', page_attribute($creatorBoard['body'], 'orientation') === 'white');
+check('the white player clock sits under the board', clock_below_board($creatorBoard['body']) === 'white');
 check('the creator is told they play white', page_attribute($creatorBoard['body'], 'color') === 'white');
 check('a seated player is given resign and draw controls', str_contains($creatorBoard['body'], 'data-resign') && str_contains($creatorBoard['body'], 'data-offer-draw'));
 
 $joinerBoard = request('GET', $board['playUrl'], null, null, $board['joinerCookie']);
 check('black sits at the bottom for black', page_attribute($joinerBoard['body'], 'orientation') === 'black');
+check('the black player clock sits under the board', clock_below_board($joinerBoard['body']) === 'black');
 check('the opponent is told they play black', page_attribute($joinerBoard['body'], 'color') === 'black');
 
 $spectatorBoard = request('GET', $board['playUrl']);

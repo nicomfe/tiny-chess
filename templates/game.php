@@ -20,6 +20,10 @@ $showsCreatorLinks = $role === Role::Creator && $creatorUrl !== null && !$isFini
 // and what tells the board to accept no input at all.
 $ownColor = $match->colorFor($role);
 $orientation = $ownColor ?? Color::White;
+// Clocks sit above and below the board; chessground puts your color at the bottom,
+// so the nearer clock must match orientation, not a fixed white-on-top layout.
+$clockAbove = $orientation === Color::White ? Color::Black : Color::White;
+$clockBelow = $orientation === Color::White ? Color::White : Color::Black;
 
 $heading = match (true) {
     $isAbandoned => 'Challenge expired',
@@ -51,86 +55,97 @@ $statusLine = match ($match->status) {
      data-fen="<?= e($match->fen) ?>"
      data-orientation="<?= e($orientation->value) ?>"
      data-color="<?= e($ownColor?->value ?? '') ?>">
-    <h1><?= e($heading) ?></h1>
-
-    <dl class="summary">
-        <dt>Time control</dt>
-        <dd><?= e($match->timeControl->label()) ?> per player</dd>
-        <dt>White</dt>
-        <dd><?= e($whitePlayer) ?></dd>
-        <dt>Status</dt>
-        <dd><?= e($statusLine) ?></dd>
-    </dl>
-
-    <?php if ($isAbandoned): ?>
-        <p class="standby" role="status">This challenge expired. Nobody joined in time — ask for a new link.</p>
-    <?php elseif ($isWaiting): ?>
-        <p class="standby" role="status">Waiting for the opponent to join. Nothing starts until they are here — the clocks stay put.</p>
-    <?php endif; ?>
-
-    <?php if ($isFinished): ?>
-        <p class="result" role="status" data-result><?= e($match->resultHeadline()) ?></p>
-    <?php endif; ?>
-
-    <?php if ($showsBoard): ?>
-        <section class="play">
-            <div class="clocks" data-clocks aria-live="polite">
-                <div class="clocks__side" data-clock="white">
-                    <span class="clocks__label">White</span>
-                    <span class="clocks__time" data-clock-time><?= e(sprintf('%d:00', $match->timeControl->minutes())) ?></span>
-                </div>
-                <div class="clocks__side" data-clock="black">
-                    <span class="clocks__label">Black</span>
-                    <span class="clocks__time" data-clock-time><?= e(sprintf('%d:00', $match->timeControl->minutes())) ?></span>
-                </div>
-            </div>
-            <!-- The board needs scripting, so its turn line and move list are
-                 left for the board to fill in rather than rendered twice. -->
-            <div class="board-frame">
-                <div class="board" data-board></div>
-            </div>
-            <p class="turn" data-turn role="status"></p>
-            <p class="move-error" data-move-error role="alert" hidden></p>
-            <?php if ($ownColor !== null && !$isFinished): ?>
-                <div class="actions" data-actions>
-                    <p class="actions__offer" data-draw-status hidden></p>
-                    <div class="actions__buttons">
-                        <button type="button" data-offer-draw>Offer draw</button>
-                        <button type="button" data-accept-draw hidden>Accept draw</button>
-                        <button type="button" data-decline-draw hidden>Decline</button>
-                        <button type="button" class="actions__resign" data-resign>Resign</button>
+    <div class="game__shell" data-game-shell>
+        <div class="game__stage">
+            <?php if ($showsBoard): ?>
+                <section class="play play--stacked">
+                    <div class="game__board-stack">
+                        <div class="game__clock clocks__side" data-clock="<?= e($clockAbove->value) ?>">
+                            <span class="clocks__label"><?= $clockAbove === Color::White ? 'White' : 'Black' ?></span>
+                            <span class="clocks__time" data-clock-time><?= e(sprintf('%d:00', $match->timeControl->minutes())) ?></span>
+                        </div>
+                        <div class="board-frame">
+                            <div class="board" data-board></div>
+                        </div>
+                        <div class="game__clock clocks__side" data-clock="<?= e($clockBelow->value) ?>">
+                            <span class="clocks__label"><?= $clockBelow === Color::White ? 'White' : 'Black' ?></span>
+                            <span class="clocks__time" data-clock-time><?= e(sprintf('%d:00', $match->timeControl->minutes())) ?></span>
+                        </div>
                     </div>
-                </div>
+                    <p class="turn" data-turn role="status"></p>
+                    <p class="move-error" data-move-error role="alert" hidden></p>
+                </section>
+            <?php else: ?>
+                <section class="play play--empty" aria-hidden="true">
+                    <div class="board-frame board-frame--placeholder">
+                        <p class="game__placeholder">Board appears when play begins.</p>
+                    </div>
+                </section>
             <?php endif; ?>
-            <ol class="moves" data-move-list></ol>
-        </section>
-    <?php endif; ?>
+        </div>
 
-    <?php if ($showsCreatorLinks): ?>
-        <section class="link-card link-card--private">
-            <h2>Your link</h2>
-            <p>Keep this one. It is private and always identifies you as the creator, even on another device.</p>
-            <div class="copy-row">
-                <input type="text" readonly value="<?= e($creatorUrl) ?>" aria-label="Your private creator link">
-                <button type="button" data-copy>Copy</button>
-            </div>
-            <p class="hint">Do not share this link — it contains your secret token.</p>
-        </section>
+        <aside class="game__panel" id="game-panel" data-game-panel>
+            <h1><?= e($heading) ?></h1>
 
-        <section class="link-card">
-            <h2>Opponent link</h2>
-            <p>Send this one to the person you want to play. It does not contain your token.</p>
-            <div class="copy-row">
-                <input type="text" readonly value="<?= e($playUrl) ?>" aria-label="Link to share with your opponent">
-                <button type="button" data-copy>Copy</button>
-            </div>
-        </section>
-    <?php elseif ($role === Role::Joiner): ?>
-        <p class="lead">You are the opponent in this game, playing
-            <?= $match->creatorPlaysWhite() ? 'black' : 'white' ?>. Stay in this browser to keep your seat —
-            it is what remembers you, so a refresh is fine but another browser would only be watching.</p>
-    <?php elseif ($role === Role::Spectator && !$isAbandoned): ?>
-        <p class="lead">You are watching this challenge<?= $isWaiting ? '' : '. Both seats are taken, so you cannot move pieces' ?>.
-            <?= $isWaiting ? 'The board appears here once play begins.' : '' ?></p>
-    <?php endif; ?>
+            <dl class="summary">
+                <dt>Time control</dt>
+                <dd><?= e($match->timeControl->label()) ?> per player</dd>
+                <dt>White</dt>
+                <dd><?= e($whitePlayer) ?></dd>
+                <dt>Status</dt>
+                <dd><?= e($statusLine) ?></dd>
+            </dl>
+
+            <?php if ($isAbandoned): ?>
+                <p class="standby" role="status">This challenge expired. Nobody joined in time — ask for a new link.</p>
+            <?php elseif ($isWaiting): ?>
+                <p class="standby" role="status">Waiting for the opponent to join. Nothing starts until they are here — the clocks stay put.</p>
+            <?php endif; ?>
+
+            <?php if ($isFinished): ?>
+                <p class="result" role="status" data-result><?= e($match->resultHeadline()) ?></p>
+            <?php endif; ?>
+
+            <?php if ($showsCreatorLinks): ?>
+                <section class="link-card">
+                    <h2>Opponent link</h2>
+                    <p>Send this one to the person you want to play. It does not contain your token.</p>
+                    <div class="copy-row">
+                        <input type="text" readonly value="<?= e($playUrl) ?>" aria-label="Link to share with your opponent">
+                        <button type="button" data-copy>Copy</button>
+                    </div>
+                </section>
+            <?php elseif ($role === Role::Joiner): ?>
+                <p class="lead">You are the opponent in this game, playing
+                    <?= $match->creatorPlaysWhite() ? 'black' : 'white' ?>. Stay in this browser to keep your seat —
+                    it is what remembers you, so a refresh is fine but another browser would only be watching.</p>
+            <?php elseif ($role === Role::Spectator && !$isAbandoned): ?>
+                <p class="lead">You are watching this challenge<?= $isWaiting ? '' : '. Both seats are taken, so you cannot move pieces' ?>.
+                    <?= $isWaiting ? 'The board appears here once play begins.' : '' ?></p>
+            <?php endif; ?>
+
+            <?php if ($showsBoard): ?>
+                <?php if ($ownColor !== null && !$isFinished): ?>
+                    <div class="actions" data-actions>
+                        <p class="actions__offer" data-draw-status hidden></p>
+                        <div class="actions__buttons">
+                            <button type="button" data-offer-draw>Offer draw</button>
+                            <button type="button" data-accept-draw hidden>Accept draw</button>
+                            <button type="button" data-decline-draw hidden>Decline</button>
+                            <button type="button" class="actions__resign" data-resign>Resign</button>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                <ol class="moves" data-move-list></ol>
+            <?php endif; ?>
+        </aside>
+    </div>
+
+    <button type="button"
+            class="game__panel-toggle"
+            data-game-panel-toggle
+            aria-controls="game-panel"
+            aria-expanded="false">
+        Match info
+    </button>
 </div>

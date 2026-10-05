@@ -48,3 +48,33 @@ const playableGame = document.querySelector('.game [data-board]')?.closest('.gam
 if (playableGame) {
     startBoard(playableGame);
 }
+
+const gameShell = document.querySelector('[data-game-shell]');
+const gameRoot = gameShell?.closest('.game');
+if (gameShell && gameRoot) {
+    const panel = gameShell.querySelector('[data-game-panel]');
+    const toggle = gameRoot.querySelector('[data-game-panel-toggle]');
+    if (panel && toggle) {
+        const close = () => {
+            gameShell.classList.remove('is-panel-open');
+            toggle.setAttribute('aria-expanded', 'false');
+        };
+
+        toggle.addEventListener('click', () => {
+            const open = gameShell.classList.toggle('is-panel-open');
+            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+
+        gameShell.addEventListener('click', (event) => {
+            if (event.target === gameShell && gameShell.classList.contains('is-panel-open')) {
+                close();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && gameShell.classList.contains('is-panel-open')) {
+                close();
+            }
+        });
+    }
+}
