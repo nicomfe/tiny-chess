@@ -26,6 +26,31 @@ function flashCopyLabel(button, doneLabel = 'Copied') {
     }, 1500);
 }
 
+/**
+ * Link previews (iMessage, Slack, etc.) GET the play URL without running JS.
+ * Claim the joiner seat here so the real opponent keeps the open seat.
+ */
+const pendingJoinGame = document.querySelector(
+    '.game[data-status="waiting"][data-role="spectator"]:not(.game--share-waiting)',
+);
+if (pendingJoinGame && !window.location.search.includes('token=')) {
+    const matchId = pendingJoinGame.dataset.matchId;
+    try {
+        const response = await fetch(`/api/matches/${matchId}/join`, {
+            method: 'POST',
+            credentials: 'same-origin',
+        });
+        if (response.ok) {
+            const payload = await response.json();
+            if (payload.role === 'joiner') {
+                window.location.reload();
+            }
+        }
+    } catch {
+        // A dropped join attempt can be retried with a refresh.
+    }
+}
+
 document.addEventListener('click', async (event) => {
     const shareButton = event.target.closest('[data-share-play-url]');
     if (shareButton) {

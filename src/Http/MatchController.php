@@ -38,8 +38,9 @@ final class MatchController
     }
 
     /**
-     * Opening the play link is what seats the opponent, so this is the one
-     * place that claims a seat.
+     * The play page only resolves who the visitor already is. Seating the
+     * opponent happens in `join`, which the browser calls with POST so link
+     * previews that fetch the URL cannot take the joiner seat.
      *
      * @param array<string, string> $params
      */
@@ -51,7 +52,7 @@ final class MatchController
         }
 
         $creatorToken = $request->queryParam('token');
-        $seat = $this->seating->claim($match, $creatorToken, JoinerCookie::readFrom($request, $match->id));
+        $seat = $this->seating->resolve($match, $creatorToken, JoinerCookie::readFrom($request, $match->id));
         $links = $this->linkFactory->forRequestBaseUrl($request->baseUrl());
 
         $response = Response::html($this->view->render('game', [
@@ -65,6 +66,30 @@ final class MatchController
                 ? $links->creatorUrl($match->id, $creatorToken)
                 : null,
         ]));
+
+        return $this->withSeatCookie($response, $request, $seat);
+    }
+
+    /**
+     * Claims the open joiner seat for this browser. Only a real page load
+     * should call this — not a link-preview fetch of the play URL.
+     *
+     * @param array<string, string> $params
+     */
+    public function join(Request $request, array $params): Response
+    {
+        $match = $this->challenges->find($params['matchId']);
+        if ($match === null) {
+            return Response::json(['error' => 'match_not_found'], 404);
+        }
+
+        $creatorToken = $request->queryParam('token');
+        $seat = $this->seating->claim($match, $creatorToken, JoinerCookie::readFrom($request, $match->id));
+
+        $response = Response::json([
+            'role' => $seat->role->value,
+            'status' => $seat->match->status->value,
+        ]);
 
         return $this->withSeatCookie($response, $request, $seat);
     }

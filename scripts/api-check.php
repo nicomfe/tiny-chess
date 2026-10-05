@@ -168,6 +168,12 @@ function match_state(string $baseUrl, string $matchId, ?string $joinerCookie = n
     return request('GET', $url, null, null, $joinerCookie);
 }
 
+/** @return array{status: int, headers: array<int, string>, body: string, json: array<string, mixed>|null} */
+function join_as_opponent(string $baseUrl, string $matchId, ?string $joinerCookie = null): array
+{
+    return request('POST', $baseUrl . '/api/matches/' . $matchId . '/join', null, null, $joinerCookie);
+}
+
 /**
  * A fresh challenge, so each section starts from a known seating state.
  *
@@ -195,7 +201,7 @@ function create_challenge(string $baseUrl): array
 function seated_game(string $baseUrl): array
 {
     $game = create_challenge($baseUrl);
-    $joined = request('GET', $game['playUrl']);
+    $joined = join_as_opponent($baseUrl, $game['matchId']);
 
     return $game + ['joinerCookie' => (string) cookie_pair(set_cookie_header($joined['headers'], 'joiner'))];
 }
@@ -501,15 +507,26 @@ check(
     (match_state($baseUrl, $game['matchId'], null, $game['creatorToken'])['json']['status'] ?? null) === 'waiting',
 );
 
+fwrite(STDOUT, "\nLink previews cannot steal the joiner seat\n");
+$previewGame = create_challenge($baseUrl);
+$previewFetch = request('GET', $previewGame['playUrl']);
+check('a naked GET of the play link does not issue a joiner cookie', set_cookie_header($previewFetch['headers'], 'joiner') === null);
+check(
+    'a link preview leaves the match waiting',
+    (match_state($baseUrl, $previewGame['matchId'])['json']['status'] ?? null) === 'waiting',
+);
+
 fwrite(STDOUT, "\nThe first play-link visitor is seated as joiner\n");
-$joined = request('GET', $game['playUrl']);
+$joined = join_as_opponent($baseUrl, $game['matchId']);
 $joinerSetCookie = set_cookie_header($joined['headers'], 'joiner');
 $joinerCookie = (string) cookie_pair($joinerSetCookie);
 [$joinerCookieName, $joinerToken] = explode('=', $joinerCookie, 2) + ['', ''];
-check('the play link issues a joiner cookie', $joinerSetCookie !== null, implode(' | ', $joined['headers']));
+check('joining issues a joiner cookie', $joinerSetCookie !== null, implode(' | ', $joined['headers']));
 check('the joiner cookie is httpOnly', stripos((string) $joinerSetCookie, 'HttpOnly') !== false, (string) $joinerSetCookie);
 check('the joiner cookie survives the link being clicked from elsewhere', stripos((string) $joinerSetCookie, 'SameSite=Lax') !== false, (string) $joinerSetCookie);
-check('the play page speaks to the opponent as the joiner', page_attribute($joined['body'], 'role') === 'joiner');
+check('joining resolves to the joiner role', ($joined['json']['role'] ?? null) === 'joiner', $joined['body']);
+$joinedPage = request('GET', $game['playUrl'], null, null, $joinerCookie);
+check('the play page speaks to the opponent as the joiner', page_attribute($joinedPage['body'], 'role') === 'joiner');
 
 $asJoiner = match_state($baseUrl, $game['matchId'], $joinerCookie);
 check('the cookie resolves to the joiner role', ($asJoiner['json']['you']['role'] ?? null) === 'joiner', $asJoiner['body']);
@@ -526,8 +543,10 @@ check('a revisit does not re-issue a seat', set_cookie_header($revisit['headers'
 
 fwrite(STDOUT, "\nThe joiner seat cannot be stolen\n");
 $thirdVisitor = request('GET', $game['playUrl']);
-check('a second browser is not handed the seat', set_cookie_header($thirdVisitor['headers'], 'joiner') === null);
-check('a second browser is only a spectator', page_attribute($thirdVisitor['body'], 'role') === 'spectator');
+check('a second browser is only a spectator on GET', page_attribute($thirdVisitor['body'], 'role') === 'spectator');
+$thirdJoinAttempt = join_as_opponent($baseUrl, $game['matchId']);
+check('a second browser is not handed the seat', set_cookie_header($thirdJoinAttempt['headers'], 'joiner') === null);
+check('a second join attempt stays spectator', ($thirdJoinAttempt['json']['role'] ?? null) === 'spectator');
 check(
     'a second browser is a spectator in the state api too',
     (match_state($baseUrl, $game['matchId'])['json']['you']['role'] ?? null) === 'spectator',

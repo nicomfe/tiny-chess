@@ -190,19 +190,20 @@ Nobody signs in, so a role is whatever credential the request happens to carry:
 | `spectator` | Anyone else                                                                |
 
 The creator token always wins, which is what lets a saved creator link work on any device and
-without cookies. The joiner seat goes to the first play-link visitor who is not the creator, and is
-then locked: the match becomes `ready`, a second browser only ever watches, and a browser that
-loses its cookie has no way back in. Every state response reports the caller's role under
-`you.role`.
+without cookies. The joiner seat goes to the first browser that opens the play link and completes the join step
+(`POST /api/matches/{id}/join` from the page script), and is then locked: the match becomes
+`ready`, a second browser only ever watches, and a browser that loses its cookie has no way back
+in. Every state response reports the caller's role under `you.role`.
 
-Only opening the play page can claim a seat — the state API reads roles but never hands one out, so
-a background poll cannot seat anyone by accident.
+The play page itself only resolves an existing role. Joining is a separate POST so link previews
+that fetch the shared URL cannot take the seat; the state API also never hands one out.
 
 ## Playing
 
 | Endpoint                            | What it does                                            |
 | ----------------------------------- | ------------------------------------------------------- |
 | `GET /api/matches/{id}?since={n}`   | Public state; `n` is the newest ply the caller has       |
+| `POST /api/matches/{id}/join`       | Claims the open joiner seat for this browser             |
 | `POST /api/matches/{id}/moves`      | Submits one move as `{"uci": "e2e4"}`                    |
 
 The client is never authoritative. `src/Game/Position.php` is the only code that knows the rules,

@@ -30,8 +30,8 @@ final class Seating
 
     /**
      * As `resolve`, but the first visitor who is nobody yet takes the open
-     * joiner seat. Only the play page claims, so that a background poll — or a
-     * creator whose request lost its token — cannot seat someone by accident.
+     * joiner seat. Only the join endpoint claims, so a link preview, poll, or
+     * creator whose request lost its token cannot seat someone by accident.
      */
     public function claim(GameMatch $match, ?string $creatorToken, ?string $joinerToken): Seat
     {

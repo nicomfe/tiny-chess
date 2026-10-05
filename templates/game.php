@@ -141,20 +141,7 @@ $statusLine = match ($match->status) {
                 <p class="result" role="status" data-result><?= e($match->resultHeadline()) ?></p>
             <?php endif; ?>
 
-            <?php if ($showsCreatorLinks): ?>
-                <section class="link-card">
-                    <h2>Opponent link</h2>
-                    <p>Send this one to the person you want to play. It does not contain your token.</p>
-                    <div class="copy-row">
-                        <input type="text" readonly value="<?= e($playUrl) ?>" aria-label="Link to share with your opponent">
-                        <button type="button" data-copy>Copy</button>
-                    </div>
-                </section>
-            <?php elseif ($role === Role::Joiner): ?>
-                <p class="lead">You are the opponent in this game, playing
-                    <?= $match->creatorPlaysWhite() ? 'black' : 'white' ?>. Stay in this browser to keep your seat —
-                    it is what remembers you, so a refresh is fine but another browser would only be watching.</p>
-            <?php elseif ($role === Role::Spectator && !$isAbandoned): ?>
+            <?php if ($role === Role::Spectator && !$isAbandoned): ?>
                 <p class="lead">You are watching this challenge<?= $isWaiting ? '' : '. Both seats are taken, so you cannot move pieces' ?>.
                     <?= $isWaiting ? 'The board appears here once play begins.' : '' ?></p>
             <?php endif; ?>

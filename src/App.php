@@ -50,17 +50,16 @@ final class App
 
         $challengeController = new ChallengeController($challenges, $matchClock, $linkFactory, $view);
         $matchController = new MatchController($challenges, $seating, $moves, $resignations, $draws, $matchClock, $linkFactory, $view);
-
         $router = new Router();
         $router->add('GET', '/', $challengeController->showCreateForm(...));
         $router->add('POST', '/challenges', $challengeController->create(...));
         $router->add('POST', '/api/challenges', $challengeController->createViaApi(...));
         $router->add('GET', '/game/{matchId}', $matchController->show(...));
+        $router->add('POST', '/api/matches/{matchId}/join', $matchController->join(...));
         $router->add('GET', '/api/matches/{matchId}', $matchController->state(...));
         $router->add('POST', '/api/matches/{matchId}/moves', $matchController->submitMove(...));
         $router->add('POST', '/api/matches/{matchId}/resign', $matchController->resign(...));
         $router->add('POST', '/api/matches/{matchId}/draw', $matchController->draw(...));
-
         return new self($router, $view);
     }
 
