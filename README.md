@@ -1,7 +1,7 @@
-# Casual Chess
+# Tiny Chess
 
 Create a timed chess challenge without an account, share one link, and play in the browser.
-See [briefing.md](briefing.md) for the specification and [tickets/](tickets) for the delivery plan.
+
 
 ## Run it locally
 
@@ -67,16 +67,15 @@ docker compose exec php composer install --no-dev --optimize-autoloader
 Optional: after bumping the `chessground` npm dependency, run `npm install && npm run vendor`
 **before** `./scripts/build-prod.sh` so `public/assets/vendor/` is up to date.
 
-### Upload with FileZilla
+### Upload with FTP to your server
 
-1. Connect to your server (SFTP if the host offers it; otherwise FTP).
-2. Choose a directory **outside** the web-visible tree if you can (e.g. `~/chess-game/`). Upload
+1. Choose a directory **outside** the web-visible tree if you can (e.g. `~/chess-game/`). Upload
    **everything inside** `dist/` — `public/`, `src/`, `vendor/`, `.env`, and the rest — not the
    `dist` folder name itself.
-3. Point the site **document root** at the `public/` folder inside that upload (cPanel “Document
+2. Point the site **document root** at the `public/` folder inside that upload (cPanel “Document
    Root”, Plesk “Hosting settings”, or your provider’s equivalent). Pretty URLs rely on
    `public/.htaccess` and `mod_rewrite`.
-4. PHP must be **8.2 or newer** with PDO MySQL enabled (typical on managed PHP hosting).
+3. PHP must be **8.2 or newer** with PDO MySQL enabled (typical on managed PHP hosting).
 
 Do **not** upload `.env.production`, `.git/`, `docker/`, or `node_modules/`. The build script already
 omits those.
@@ -138,12 +137,6 @@ php scripts/api-check.php https://your-domain.example
 
 Use your host’s error log when something fails; API responses intentionally hide details.
 
-### Later releases
-
-1. Edit code locally, run `./scripts/build-prod.sh` again.
-2. Upload changed files over FTP (at minimum anything under `public/`, `src/`, `templates/`, and
-   new migration SQL; replace `vendor/` when `composer.lock` changed).
-3. Run `php scripts/migrate.php` when new migrations exist.
 
 ## Check it works
 
