@@ -52,4 +52,9 @@ final class Challenges
     {
         return $this->matches->snapshot($matchId, fn (MatchSnapshot $snapshot): MatchSnapshot => $this->timing->refresh($snapshot));
     }
+
+    public function drawEventsFor(string $matchId): DrawEventLog
+    {
+        return $this->matches->drawEventsFor($matchId);
+    }
 }

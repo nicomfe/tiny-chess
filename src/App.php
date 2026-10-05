@@ -44,7 +44,7 @@ final class App
         $seating = new Seating($matches, $tokens);
         $moves = new Moves($matches, $clock, $timing);
         $resignations = new Resignations($matches, $matchClock, $timing);
-        $draws = new Draws($matches, $matchClock, $timing);
+        $draws = new Draws($matches, $matchClock, $timing, $clock);
         $linkFactory = new MatchLinkFactory($config->baseUrlOverride());
         $view = new View($projectRoot . '/templates');
 

@@ -840,6 +840,8 @@ $offered = draw_action($baseUrl, $offering['matchId'], 'offer', null, $offering[
 check('the creator can offer a draw while ready', $offered['status'] === 200, $offered['body']);
 check('the match stays ready after an offer', ($offered['json']['status'] ?? null) === 'ready', $offered['body']);
 check('the offer is stored as white', ($offered['json']['drawOffer']['by'] ?? null) === 'white', $offered['body']);
+check('offering records a draw event', ($offered['json']['drawEventCount'] ?? 0) === 1, $offered['body']);
+check('the draw event is an offer by white', ($offered['json']['drawEvents'][0]['kind'] ?? null) === 'offer' && ($offered['json']['drawEvents'][0]['by'] ?? null) === 'white', $offered['body']);
 
 $opponentSeesOffer = match_state($baseUrl, $offering['matchId'], $offering['joinerCookie']);
 check('the opponent sees the outstanding offer', ($opponentSeesOffer['json']['drawOffer']['by'] ?? null) === 'white', $opponentSeesOffer['body']);
@@ -863,6 +865,8 @@ check('an accepted draw finishes the match', ($agreed['json']['status'] ?? null)
 check('an accepted draw has no winner', is_null_field($agreed['json']['result'] ?? null, 'winner'), $agreed['body']);
 check('the result reason is agreement', ($agreed['json']['result']['reason'] ?? null) === 'agreement', $agreed['body']);
 check('the offer is cleared once the game is over', is_null_field($agreed['json'], 'drawOffer'), $agreed['body']);
+check('accepting records offer and accept events', ($agreed['json']['drawEventCount'] ?? 0) === 2, $agreed['body']);
+check('the last draw event is an accept', ($agreed['json']['drawEvents'][1]['kind'] ?? null) === 'accept', $agreed['body']);
 
 $declined = seated_game($baseUrl);
 draw_action($baseUrl, $declined['matchId'], 'offer', null, $declined['creatorToken']);
@@ -870,6 +874,8 @@ $refused = draw_action($baseUrl, $declined['matchId'], 'decline', $declined['joi
 check('the opponent can decline a draw', $refused['status'] === 200, $refused['body']);
 check('declining leaves the match ready', ($refused['json']['status'] ?? null) === 'ready', $refused['body']);
 check('declining clears the offer', is_null_field($refused['json'], 'drawOffer'), $refused['body']);
+check('declining records offer and decline events', ($refused['json']['drawEventCount'] ?? 0) === 2, $refused['body']);
+check('the last draw event is a decline', ($refused['json']['drawEvents'][1]['kind'] ?? null) === 'decline', $refused['body']);
 
 $ownOffer = seated_game($baseUrl);
 draw_action($baseUrl, $ownOffer['matchId'], 'offer', null, $ownOffer['creatorToken']);

@@ -212,6 +212,57 @@ final class MatchRepository
         ));
     }
 
+    public function lastDrawEventNumber(string $matchId): int
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT COALESCE(MAX(event_number), 0) FROM draw_events WHERE match_id = :match_id',
+        );
+        $statement->execute(['match_id' => $matchId]);
+
+        return (int) $statement->fetchColumn();
+    }
+
+    public function appendDrawEvent(
+        string $matchId,
+        int $eventNumber,
+        DrawEventKind $kind,
+        Color $by,
+        int $afterMoveNumber,
+        DateTimeImmutable $at,
+    ): void {
+        $statement = $this->pdo->prepare(
+            'INSERT INTO draw_events
+                (match_id, event_number, kind, by_color, after_move_number, created_at)
+             VALUES
+                (:match_id, :event_number, :kind, :by_color, :after_move_number, :created_at)',
+        );
+
+        $statement->execute([
+            'match_id' => $matchId,
+            'event_number' => $eventNumber,
+            'kind' => $kind->value,
+            'by_color' => $by->value,
+            'after_move_number' => $afterMoveNumber,
+            'created_at' => $at->format('Y-m-d H:i:s.v'),
+        ]);
+    }
+
+    public function drawEventsFor(string $matchId): DrawEventLog
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT event_number, kind, by_color, after_move_number
+               FROM draw_events
+              WHERE match_id = :match_id
+              ORDER BY event_number',
+        );
+        $statement->execute(['match_id' => $matchId]);
+
+        return new DrawEventLog(array_map(
+            static fn (array $row): RecordedDrawEvent => RecordedDrawEvent::fromRow($row),
+            $statement->fetchAll(),
+        ));
+    }
+
     /**
      * Runs the given work in one transaction, so a ply and the position it
      * produces are either both stored or neither is.

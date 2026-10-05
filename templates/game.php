@@ -174,12 +174,19 @@ $statusLine = match ($match->status) {
             <?php if ($showsBoard): ?>
                 <?php if ($ownColor !== null && !$isFinished): ?>
                     <div class="actions" data-actions>
-                        <p class="actions__offer" data-draw-status hidden></p>
                         <div class="actions__buttons">
                             <button type="button" data-offer-draw>Offer draw</button>
-                            <button type="button" data-accept-draw hidden>Accept draw</button>
-                            <button type="button" data-decline-draw hidden>Decline</button>
                             <button type="button" class="actions__resign" data-resign>Resign</button>
+                        </div>
+                        <p class="actions__notice actions__notice--pending" data-draw-pending hidden role="status">
+                            Draw offered — waiting for your opponent.
+                        </p>
+                        <div class="actions__notice actions__notice--incoming" data-draw-incoming hidden role="region" aria-label="Draw offer">
+                            <p class="actions__notice-label">Draw offered</p>
+                            <div class="actions__notice-actions">
+                                <button type="button" data-accept-draw>Accept</button>
+                                <button type="button" data-decline-draw>Decline</button>
+                            </div>
                         </div>
                     </div>
                 <?php endif; ?>

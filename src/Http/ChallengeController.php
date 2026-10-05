@@ -7,6 +7,7 @@ namespace Chess\Http;
 use Chess\Game\ChallengeInput;
 use Chess\Game\Challenges;
 use Chess\Game\CreatedChallenge;
+use Chess\Game\DrawEventLog;
 use Chess\Game\InvalidChallengeInput;
 use Chess\Game\MatchClock;
 use Chess\Game\MatchLinkFactory;
@@ -89,6 +90,7 @@ final class ChallengeController
             new MatchSnapshot($match, MoveLog::empty()),
             Role::Creator,
             $this->matchClock,
+            DrawEventLog::empty(),
         ) + [
             'creatorUrl' => $links->creatorUrl($match->id, $created->creatorToken),
             'playUrl' => $links->playUrl($match->id),

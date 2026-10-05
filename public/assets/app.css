@@ -414,12 +414,6 @@ body.game-page .game__panel {
     margin: 0 0 1rem;
 }
 
-.actions__offer {
-    color: var(--muted);
-    margin: 0 0 0.6rem;
-    text-align: center;
-}
-
 .actions__buttons {
     display: flex;
     flex-wrap: wrap;
@@ -430,6 +424,50 @@ body.game-page .game__panel {
 .actions__buttons button {
     background: var(--panel-accent);
     color: var(--text);
+}
+
+.actions__buttons button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.actions__notice {
+    margin: 0.65rem 0 0;
+}
+
+.actions__notice--pending {
+    color: var(--muted);
+    font-size: 0.85rem;
+    line-height: 1.35;
+    margin-bottom: 0;
+    text-align: center;
+}
+
+.actions__notice--incoming {
+    background: rgba(122, 162, 247, 0.14);
+    border: 1px solid rgba(122, 162, 247, 0.35);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    padding: 0.75rem 0.85rem;
+    text-align: center;
+}
+
+.actions__notice-label {
+    font-weight: 600;
+    margin: 0 0 0.55rem;
+}
+
+.actions__notice-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+.actions__notice-actions button {
+    background: var(--panel-accent);
+    color: var(--text);
+    min-width: 5.5rem;
 }
 
 .actions__resign {
@@ -487,6 +525,23 @@ body.game-page .game__panel {
 .moves__white::before {
     color: var(--muted);
     content: counter(move) ". ";
+}
+
+.moves__draw {
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-style: italic;
+    grid-column: 1 / -1;
+    margin: 0.15rem 0;
+    text-align: center;
+}
+
+.moves__draw--white,
+.moves__draw--black {
+    background: rgba(122, 162, 247, 0.1);
+    border-radius: 6px;
+    font-style: normal;
+    padding: 0.35rem 0.5rem;
 }
 
 .link-card {

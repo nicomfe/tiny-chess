@@ -30,8 +30,10 @@ export function startBoard(game) {
     // have to keep it to stay the creator.
     const credentials = window.location.search;
     const plies = new Map();
+    const drawEvents = new Map();
     let state = null;
     let pliesDrawn = -1;
+    let drawEventsDrawn = 0;
 
     const ground = Chessground(game.querySelector('[data-board]'), {
         fen: game.dataset.fen,
@@ -130,6 +132,10 @@ export function startBoard(game) {
             plies.set(ply.number, ply);
         }
 
+        for (const event of payload.drawEvents ?? []) {
+            drawEvents.set(event.number, event);
+        }
+
         // Polls arrive every second whether or not anything happened, and
         // touching the board is not free while a player has a piece in hand.
         const changed = state === null
@@ -138,10 +144,12 @@ export function startBoard(game) {
             || state.status !== payload.status
             || state.you.canMove !== payload.you.canMove
             || state.drawOffer?.by !== payload.drawOffer?.by
+            || (state.drawEventCount ?? 0) !== (payload.drawEventCount ?? 0)
             || clocksChanged(state?.clocks, payload.clocks);
 
         state = payload;
         pliesDrawn = payload.moveCount;
+        drawEventsDrawn = payload.drawEventCount ?? drawEventsDrawn;
         drawTurn(payload);
         drawClocks(payload);
         drawActions(payload);
@@ -186,14 +194,57 @@ export function startBoard(game) {
         return newest ? [newest.uci.slice(0, 2), newest.uci.slice(2, 4)] : undefined;
     }
 
-    function drawMoveList() {
-        moveList.replaceChildren(...[...plies.keys()].sort((a, b) => a - b).map((number) => {
-            const item = document.createElement('li');
-            item.textContent = plies.get(number).san;
-            item.className = number % 2 === 1 ? 'moves__white' : 'moves__black';
+    function drawEventLabel(event) {
+        if (event.kind === 'accept') {
+            return 'Draw accepted';
+        }
 
-            return item;
-        }));
+        if (event.kind === 'decline') {
+            return 'Draw declined';
+        }
+
+        return 'Draw offered';
+    }
+
+    function drawMoveList() {
+        if (moveList === null) {
+            return;
+        }
+
+        const sortedMoves = [...plies.keys()].sort((a, b) => a - b);
+        const sortedEventNumbers = [...drawEvents.keys()].sort((a, b) => a - b);
+        const items = [];
+        let moveIndex = 0;
+        let eventIndex = 0;
+
+        const appendDrawEventsAfter = (afterMove) => {
+            while (eventIndex < sortedEventNumbers.length) {
+                const event = drawEvents.get(sortedEventNumbers[eventIndex]);
+                if (event.afterMove !== afterMove) {
+                    break;
+                }
+
+                const item = document.createElement('li');
+                item.className = `moves__draw moves__draw--${event.by}`;
+                item.textContent = drawEventLabel(event);
+                items.push(item);
+                eventIndex += 1;
+            }
+        };
+
+        appendDrawEventsAfter(0);
+
+        while (moveIndex < sortedMoves.length) {
+            const number = sortedMoves[moveIndex];
+            const moveItem = document.createElement('li');
+            moveItem.textContent = plies.get(number).san;
+            moveItem.className = number % 2 === 1 ? 'moves__white' : 'moves__black';
+            items.push(moveItem);
+            moveIndex += 1;
+            appendDrawEventsAfter(number);
+        }
+
+        moveList.replaceChildren(...items);
     }
 
     function clocksChanged(before, after) {
@@ -301,22 +352,25 @@ export function startBoard(game) {
         const theyOffered = offerBy !== null && offerBy !== ownColor;
         const inPlay = current.status === 'ready' || current.status === 'active';
 
+        const offerButton = game.querySelector('[data-offer-draw]');
+        const pendingNotice = game.querySelector('[data-draw-pending]');
+        const incomingNotice = game.querySelector('[data-draw-incoming]');
+        const youOffered = offerBy === ownColor;
+
         actions.hidden = !inPlay;
-        game.querySelector('[data-offer-draw]').hidden = !inPlay || offerBy !== null;
-        game.querySelector('[data-accept-draw]').hidden = !theyOffered;
-        game.querySelector('[data-decline-draw]').hidden = !theyOffered;
         game.querySelector('[data-resign]').hidden = !inPlay;
 
-        const status = game.querySelector('[data-draw-status]');
-        if (offerBy === ownColor) {
-            status.hidden = false;
-            status.textContent = 'Draw offered — waiting for your opponent.';
-        } else if (theyOffered) {
-            status.hidden = false;
-            status.textContent = 'Your opponent offers a draw.';
-        } else {
-            status.hidden = true;
-            status.textContent = '';
+        if (offerButton !== null) {
+            offerButton.hidden = !inPlay || theyOffered;
+            offerButton.disabled = youOffered;
+        }
+
+        if (pendingNotice !== null) {
+            pendingNotice.hidden = !youOffered;
+        }
+
+        if (incomingNotice !== null) {
+            incomingNotice.hidden = !theyOffered;
         }
     }
 
@@ -391,6 +445,7 @@ export function startBoard(game) {
     function stateUrl() {
         const params = new URLSearchParams(credentials);
         params.set('since', String(plies.size));
+        params.set('sinceDraw', String(drawEventsDrawn));
 
         return `/api/matches/${matchId}?${params}`;
     }

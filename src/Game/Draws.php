@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Chess\Game;
 
+use Chess\Clock;
+
 /** Offer, accept, or decline a draw while a match is still being played. */
 final class Draws
 {
@@ -11,6 +13,7 @@ final class Draws
         private readonly MatchRepository $matches,
         private readonly MatchClock $clock,
         private readonly MatchTiming $timing,
+        private readonly Clock $wallClock,
     ) {
     }
 
@@ -74,6 +77,7 @@ final class Draws
 
         $offered = $match->withDrawOffered($color);
         $this->matches->saveDrawOffer($offered);
+        $this->recordDrawEvent($matchId, $color, DrawEventKind::Offer);
 
         return new MatchSnapshot($offered, $this->matches->movesFor($offered->id));
     }
@@ -93,9 +97,12 @@ final class Draws
         if (!$accept) {
             $declined = $match->withoutDrawOffer();
             $this->matches->saveDrawOffer($declined);
+            $this->recordDrawEvent($matchId, $color, DrawEventKind::Decline);
 
             return new MatchSnapshot($declined, $this->matches->movesFor($declined->id));
         }
+
+        $this->recordDrawEvent($matchId, $color, DrawEventKind::Accept);
 
         $display = $this->clock->display($match, $match->position()->sideToMove());
         $finished = $match->withFinished(
@@ -107,6 +114,18 @@ final class Draws
         $this->matches->saveClockState($finished);
 
         return new MatchSnapshot($finished, $this->matches->movesFor($finished->id));
+    }
+
+    private function recordDrawEvent(string $matchId, Color $by, DrawEventKind $kind): void
+    {
+        $this->matches->appendDrawEvent(
+            $matchId,
+            $this->matches->lastDrawEventNumber($matchId) + 1,
+            $kind,
+            $by,
+            $this->matches->lastMoveNumber($matchId),
+            $this->wallClock->now(),
+        );
     }
 
     private function lockedInProgress(string $matchId): GameMatch

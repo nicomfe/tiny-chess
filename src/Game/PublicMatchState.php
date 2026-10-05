@@ -17,8 +17,14 @@ final class PublicMatchState
      * @param int $cursor the newest move number the caller already has
      * @return array<string, mixed>
      */
-    public static function forRole(MatchSnapshot $snapshot, Role $role, MatchClock $clock, int $cursor = 0): array
-    {
+    public static function forRole(
+        MatchSnapshot $snapshot,
+        Role $role,
+        MatchClock $clock,
+        DrawEventLog $drawEvents,
+        int $cursor = 0,
+        int $drawCursor = 0,
+    ): array {
         $match = $snapshot->match;
         $moves = $snapshot->moves;
         $position = $match->position();
@@ -62,6 +68,16 @@ final class PublicMatchState
             ],
             'result' => self::result($match),
             'drawOffer' => $match->drawOfferBy === null ? null : ['by' => $match->drawOfferBy->value],
+            'drawEventCount' => $drawEvents->count(),
+            'drawEvents' => array_map(
+                static fn (RecordedDrawEvent $event): array => [
+                    'number' => $event->number,
+                    'kind' => $event->kind->value,
+                    'by' => $event->by->value,
+                    'afterMove' => $event->afterMove,
+                ],
+                $drawEvents->since($drawCursor),
+            ),
         ];
     }
 

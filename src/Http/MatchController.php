@@ -191,7 +191,9 @@ final class MatchController
             $snapshot,
             $role,
             $this->matchClock,
+            $this->challenges->drawEventsFor($snapshot->match->id),
             max(0, (int) ($request->queryParam('since') ?? 0)),
+            max(0, (int) ($request->queryParam('sinceDraw') ?? 0)),
         ));
     }
 
