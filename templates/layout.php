@@ -15,7 +15,7 @@
 </head>
 <body<?= $bodyClass !== '' ? ' class="' . e($bodyClass) . '"' : '' ?>>
     <main>
-        <a class="brand" href="/">Casual Chess</a>
+        <a class="brand" href="/">Tiny Chess</a>
         <?= $content ?>
     </main>
     <script src="/assets/app.js" type="module"></script>

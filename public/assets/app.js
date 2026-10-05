@@ -1,15 +1,11 @@
-import { startBoard } from './board.js';
+import { startBackdropBoard, startBoard } from './board.js';
 import { STOP, followState } from './poll.js';
 
-document.addEventListener('click', async (event) => {
-    const button = event.target.closest('[data-copy]');
-    if (!button) {
-        return;
-    }
-
-    const input = button.parentElement.querySelector('input');
+async function copyPlayUrlFromContext(button) {
+    const root = button.closest('[data-share-cta]') ?? button.parentElement;
+    const input = root?.querySelector('input');
     if (!input) {
-        return;
+        return false;
     }
 
     try {
@@ -19,11 +15,54 @@ document.addEventListener('click', async (event) => {
         document.execCommand('copy');
     }
 
+    return true;
+}
+
+function flashCopyLabel(button, doneLabel = 'Copied') {
     const original = button.textContent;
-    button.textContent = 'Copied';
+    button.textContent = doneLabel;
     setTimeout(() => {
         button.textContent = original;
     }, 1500);
+}
+
+document.addEventListener('click', async (event) => {
+    const shareButton = event.target.closest('[data-share-play-url]');
+    if (shareButton) {
+        const root = shareButton.closest('[data-share-cta]');
+        const input = root?.querySelector('input');
+        const url = input?.value;
+        if (!url) {
+            return;
+        }
+
+        if (typeof navigator.share === 'function') {
+            try {
+                await navigator.share({ title: 'Chess challenge', url });
+                return;
+            } catch (error) {
+                if (error?.name === 'AbortError') {
+                    return;
+                }
+            }
+        }
+
+        if (await copyPlayUrlFromContext(shareButton)) {
+            flashCopyLabel(shareButton, 'Link copied');
+        }
+        return;
+    }
+
+    const button = event.target.closest('[data-copy]');
+    if (!button) {
+        return;
+    }
+
+    if (!(await copyPlayUrlFromContext(button))) {
+        return;
+    }
+
+    flashCopyLabel(button);
 });
 
 /**
@@ -44,7 +83,12 @@ if (waitingGame) {
     });
 }
 
-const playableGame = document.querySelector('.game [data-board]')?.closest('.game');
+const shareWaitGame = document.querySelector('.game--share-waiting');
+if (shareWaitGame) {
+    startBackdropBoard(shareWaitGame);
+}
+
+const playableGame = document.querySelector('.game:not(.game--share-waiting) [data-board]')?.closest('.game');
 if (playableGame) {
     startBoard(playableGame);
 }

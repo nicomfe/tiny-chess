@@ -28,7 +28,10 @@ final class ChallengeController
 
     public function showCreateForm(Request $request): Response
     {
-        return Response::html($this->view->render('create', ['title' => 'New chess challenge']));
+        return Response::html($this->view->render('create', [
+            'title' => 'New chess challenge',
+            'bodyClass' => 'create-home-page',
+        ]));
     }
 
     public function create(Request $request): Response
@@ -39,6 +42,7 @@ final class ChallengeController
             return Response::html(
                 $this->view->render('create', [
                     'title' => 'New chess challenge',
+                    'bodyClass' => 'create-home-page',
                     'error' => $e->getMessage(),
                     'minutes' => $request->bodyParam('minutes'),
                     'white' => $request->bodyParam('white'),

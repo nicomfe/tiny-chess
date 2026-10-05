@@ -216,4 +216,5 @@ final class MatchController
             JoinerCookie::issue($seat->match->id, $seat->issuedJoinerToken, $request->isSecure()),
         );
     }
+
 }

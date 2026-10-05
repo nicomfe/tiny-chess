@@ -375,3 +375,19 @@ export function startBoard(game) {
         }
     });
 }
+
+/** Static board for the creator share screen while the opponent has not joined. */
+export function startBackdropBoard(game) {
+    const board = game.querySelector('[data-board-backdrop]');
+    if (!board) {
+        return;
+    }
+
+    Chessground(board, {
+        fen: game.dataset.fen,
+        orientation: game.dataset.orientation,
+        viewOnly: true,
+        coordinates: true,
+        draggable: { enabled: false },
+    });
+}

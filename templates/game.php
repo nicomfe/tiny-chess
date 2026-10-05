@@ -15,6 +15,7 @@ $isAbandoned = $match->status === MatchStatus::Abandoned;
 $isFinished = $match->status === MatchStatus::Finished;
 $showsBoard = $match->allowsMoves() || $isFinished;
 $showsCreatorLinks = $role === Role::Creator && $creatorUrl !== null && !$isFinished && !$isAbandoned;
+$isCreatorShareWaiting = $showsCreatorLinks && $isWaiting;
 
 // A spectator has no color, which is both the fixed white-at-the-bottom view
 // and what tells the board to accept no input at all.
@@ -48,13 +49,47 @@ $statusLine = match ($match->status) {
     MatchStatus::Finished => $match->resultHeadline(),
 };
 ?>
-<div class="game"
+<div class="game<?= $isCreatorShareWaiting ? ' game--share-waiting' : '' ?>"
      data-match-id="<?= e($match->id) ?>"
      data-status="<?= e($match->status->value) ?>"
      data-role="<?= e($role->value) ?>"
      data-fen="<?= e($match->fen) ?>"
      data-orientation="<?= e($orientation->value) ?>"
      data-color="<?= e($ownColor?->value ?? '') ?>">
+    <?php if ($isCreatorShareWaiting): ?>
+        <div class="share-wait__backdrop" aria-hidden="true">
+            <div class="board-frame share-wait__board-frame">
+                <div class="board" data-board-backdrop></div>
+            </div>
+        </div>
+        <div class="share-wait__shell" data-game-shell>
+            <div class="share-wait__column">
+                <h1 class="share-wait__title">Share the link to your opponent</h1>
+                <p class="share-wait__lead">Your game is ready. Clocks stay idle until opponent joins.</p>
+
+                <div class="share-wait__cta" data-share-cta>
+                    <button type="button" class="share-wait__share-btn" data-share-play-url>
+                        Share invite link
+                    </button>
+                    <p class="share-wait__share-fallback">
+                        Or <button type="button" class="share-wait__share-copy" data-copy>copy link</button>
+                    </p>
+                    <input type="text"
+                           readonly
+                           value="<?= e($playUrl) ?>"
+                           aria-label="Link to share with your opponent"
+                           tabindex="-1"
+                           class="share-wait__share-url-sr">
+                </div>
+
+                <ul class="share-wait__chips" aria-label="Challenge details">
+                    <li><?= e($match->timeControl->label()) ?> each</li>
+                    <li>White: <?= e($whitePlayer) ?></li>
+                    <li><?= e($statusLine) ?></li>
+                </ul>
+            </div>
+        </div>
+    <?php else: ?>
     <div class="game__shell" data-game-shell>
         <div class="game__stage">
             <?php if ($showsBoard): ?>
@@ -148,4 +183,5 @@ $statusLine = match ($match->status) {
             aria-expanded="false">
         Match info
     </button>
+    <?php endif; ?>
 </div>
